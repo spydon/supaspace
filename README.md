@@ -1,5 +1,7 @@
 # Supaspace
 
+**▶ Play it at [supaspace.net](https://supaspace.net)**
+
 A real-time multiplayer top-down space game built with the [Flame](https://flame-engine.org)
 game engine and [Supabase Realtime](https://supabase.com/docs/guides/realtime).
 Each match lasts **5 minutes**: fly your ship around, capture as many planets as
