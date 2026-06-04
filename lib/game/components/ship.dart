@@ -142,6 +142,12 @@ class LocalShip extends ShipComponent
   double _fireCooldown = 0;
   double _broadcastTimer = 0;
 
+  // Idle-broadcast tracking: stop broadcasting once the ship is at rest with no
+  // input, after sending one final resting state. Starts true so the first
+  // state is always sent. See the broadcast block in [update].
+  bool _wasActive = true;
+  double _lastBroadcastFacing = 0;
+
   // Powerup state. Bullet/ship speed stack per pickup; shotgun and homing are
   // on/off abilities once collected.
   int _bulletSpeedLevel = 0;
@@ -231,11 +237,23 @@ class LocalShip extends ShipComponent
       _fire();
     }
 
-    // Broadcast authoritative state.
+    // Broadcast authoritative state — but skip it while the ship is idle
+    // (at rest, not aiming, no input), after sending one final resting state,
+    // so a parked player doesn't keep emitting ~20 messages/second.
     _broadcastTimer -= deltaTime;
     if (_broadcastTimer <= 0) {
       _broadcastTimer = _broadcastInterval;
-      game.broadcastShipState(this);
+      final active =
+          velocity.length2 > 1 ||
+          (facing - _lastBroadcastFacing).abs() > 0.01 ||
+          thrust ||
+          brake ||
+          game.firing;
+      if (active || _wasActive) {
+        game.broadcastShipState(this);
+        _lastBroadcastFacing = facing;
+      }
+      _wasActive = active;
     }
   }
 

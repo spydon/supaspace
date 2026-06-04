@@ -112,10 +112,6 @@ class SpaceGame extends FlameGame
   final Vector2 _lastPointerScreen = Vector2.zero();
   bool _hasPointer = false;
 
-  /// Reused each frame by [_resolveHits] to snapshot bullets without
-  /// allocating a fresh list.
-  final List<Bullet> _bulletScratch = [];
-
   /// Whether the left mouse button is held (drives continuous firing). Set by
   /// the pointer listener wrapping the game widget.
   bool firing = false;
@@ -178,6 +174,10 @@ class SpaceGame extends FlameGame
     camera.viewfinder.anchor = Anchor.center;
     camera.viewfinder.position = worldSize / 2;
     camera.backdrop = Starfield();
+
+    // Maintain a cached query of bullets so hit resolution doesn't scan every
+    // world child each frame.
+    world.children.register<Bullet>();
 
     final flameImage = await images.load('green_flame_bullet.png');
     bulletAnimation = SpriteAnimation.fromFrameData(
@@ -568,9 +568,9 @@ class SpaceGame extends FlameGame
       powerup.removeFromParent();
     }
     _powerups.clear();
-    world.children.whereType<Bullet>().forEach(
-      (bullet) => bullet.removeFromParent(),
-    );
+    for (final bullet in world.children.query<Bullet>()) {
+      bullet.removeFromParent();
+    }
     camera.viewfinder.position = worldSize / 2;
     _capturingPlanetId = null;
     _captureElapsed = 0;
@@ -1027,12 +1027,10 @@ class SpaceGame extends FlameGame
 
   void _resolveHits() {
     final localShip = _ships[player.id] as LocalShip?;
-    // Snapshot into a reused buffer so removing a bullet mid-loop is safe
-    // without allocating a fresh list every frame.
-    _bulletScratch
-      ..clear()
-      ..addAll(world.children.whereType<Bullet>());
-    for (final bullet in _bulletScratch) {
+    // query<Bullet>() is the registered, cached bullet set (no per-frame scan
+    // of all world children). Removals are deferred to the tick's end, so
+    // removing a bullet while iterating is safe.
+    for (final bullet in world.children.query<Bullet>()) {
       for (final ship in _ships.values) {
         if (ship.id == bullet.ownerId || !ship.alive) {
           continue;
