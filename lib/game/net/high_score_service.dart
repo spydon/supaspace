@@ -35,10 +35,12 @@ class HighScoreService {
     await _client.rpc<void>(
       'report_winner',
       params: {
-        'match_id': matchId,
-        'winner_id': winnerId,
-        'winner_name': winnerName,
-        'participant_count': participantCount,
+        // These keys must match the function's (p_-prefixed) parameter names;
+        // PostgREST resolves the RPC by argument name.
+        'p_match_id': matchId,
+        'p_winner_id': winnerId,
+        'p_winner_name': winnerName,
+        'p_participant_count': participantCount,
       },
     );
   }
