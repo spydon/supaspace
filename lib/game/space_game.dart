@@ -1,0 +1,1149 @@
+import 'dart:async';
+import 'dart:math';
+
+import 'package:flame/components.dart';
+import 'package:flame/events.dart';
+import 'package:flame/game.dart';
+import 'package:flutter/material.dart' hide PointerMoveEvent;
+import 'package:supaspace/game/components/bullet.dart';
+import 'package:supaspace/game/components/grid.dart';
+import 'package:supaspace/game/components/minimap.dart';
+import 'package:supaspace/game/components/minimap_marker.dart';
+import 'package:supaspace/game/components/planet.dart';
+import 'package:supaspace/game/components/powerup.dart';
+import 'package:supaspace/game/components/ship.dart';
+import 'package:supaspace/game/components/starfield.dart';
+import 'package:supaspace/game/components/taunt_bubble.dart';
+import 'package:supaspace/game/countdown.dart';
+import 'package:supaspace/game/game_phase.dart';
+import 'package:supaspace/game/net/high_score_service.dart';
+import 'package:supaspace/game/net/net_events.dart';
+import 'package:supaspace/game/net/realtime_client.dart';
+import 'package:supaspace/game/planet_field.dart';
+import 'package:supaspace/game/player.dart';
+import 'package:supaspace/game/player_store.dart';
+import 'package:supaspace/game/powerup_field.dart';
+import 'package:supaspace/game/powerup_type.dart';
+import 'package:supaspace/game/sound_service.dart';
+import 'package:supaspace/game/taunts.dart';
+
+/// A player's planet score, for the HUD / results overlay.
+class ScoreEntry {
+  ScoreEntry({
+    required this.id,
+    required this.name,
+    required this.color,
+    required this.planets,
+  });
+
+  final String id;
+  final String name;
+  final Color color;
+  final int planets;
+}
+
+/// The final result of a match: who controlled the most planets when the
+/// countdown ended. [leaders] holds every player sharing the top count, so a
+/// tie can be shown instead of crowning an arbitrary winner.
+class MatchOutcome {
+  MatchOutcome({required this.leaders, required this.topPlanets});
+
+  final List<ScoreEntry> leaders;
+  final int topPlanets;
+
+  /// Whether anyone actually captured a planet.
+  bool get hasCaptures => topPlanets > 0;
+
+  /// Whether the top count is shared by more than one player.
+  bool get isTie => leaders.length > 1;
+
+  /// The sole winner (only meaningful when [hasCaptures] and not [isTie]).
+  ScoreEntry get winner => leaders.first;
+}
+
+/// Root game. Holds the world (planets, ships, bullets), the camera + fixed
+/// starfield, the lobby/playing/results state machine, and bridges the
+/// Supabase [RealtimeClient] to local simulation. Peer/client-authoritative:
+/// this client owns its local ship and its bullets; remote ships are
+/// interpolated.
+class SpaceGame extends FlameGame
+    with
+        HasKeyboardHandlerComponents,
+        PointerMoveCallbacks,
+        TapCallbacks,
+        DragCallbacks {
+  static final Vector2 worldSize = Vector2(4200, 3000);
+  static const captureSeconds = 5.0;
+  static const overlayName = 'name';
+  static const overlayLobby = 'lobby';
+  static const overlayHud = 'hud';
+  static const overlayResults = 'results';
+  static const overlaySpectate = 'spectate';
+
+  late final LocalPlayer player;
+  late final RealtimeClient net;
+  late final HighScoreService highScoreService;
+  final PlayerStore _playerStore = PlayerStore();
+
+  /// Shared green-flame animation used by every [Bullet]. Loaded once at boot;
+  /// each bullet plays its own ticker over these frames.
+  late final SpriteAnimation bulletAnimation;
+
+  /// Looping animation per powerup type, loaded once at boot.
+  late final Map<PowerupType, SpriteAnimation> _powerupAnimations;
+
+  /// Whether the player has chosen a call sign and joined this session. Until
+  /// then only the [overlayName] form is shown — there is no network presence.
+  bool _sessionStarted = false;
+
+  /// The [GameWidget]'s focus node, set by the host widget. Keyboard input
+  /// (thrust/brake) only reaches the game while this node holds focus, so it is
+  /// re-requested whenever a text-field overlay (the call-sign form) closes.
+  FocusNode? gameFocusNode;
+
+  /// Mouse position in world coordinates (drives local ship aim). Re-derived
+  /// every frame from [_lastPointerScreen] so it tracks the camera.
+  final Vector2 aimWorld = Vector2.zero();
+
+  /// Last known cursor position in widget/screen coordinates, and whether one
+  /// has been seen. The camera follows the ship, so a stationary cursor must be
+  /// re-projected to world space each frame — otherwise the ship would turn to
+  /// chase the now-stale world point once it flew past it.
+  final Vector2 _lastPointerScreen = Vector2.zero();
+  bool _hasPointer = false;
+
+  /// Reused each frame by [_resolveHits] to snapshot bullets without
+  /// allocating a fresh list.
+  final List<Bullet> _bulletScratch = [];
+
+  /// Whether the left mouse button is held (drives continuous firing). Set by
+  /// the pointer listener wrapping the game widget.
+  bool firing = false;
+
+  // Reactive state consumed by the Flutter overlays.
+  final phase = ValueNotifier<GamePhase>(GamePhase.lobby);
+  final roster = ValueNotifier<List<PresenceMember>>([]);
+  final clock = ValueNotifier<String>('05:00');
+  final scores = ValueNotifier<List<ScoreEntry>>([]);
+  final outcome = ValueNotifier<MatchOutcome?>(null);
+  final highScores = ValueNotifier<List<HighScore>>([]);
+
+  /// Transient message shown when a powerup is picked up (e.g. "Bullet
+  /// Speed +1"); cleared after [_powerupMessageDuration].
+  final powerupMessage = ValueNotifier<String?>(null);
+  static const _powerupMessageDuration = 2.2;
+  double _powerupMessageTimer = 0;
+
+  /// In the lobby, whether this client intends to spectate the next match
+  /// rather than play it.
+  final spectateIntent = ValueNotifier<bool>(false);
+
+  /// Name of the ship the spectator camera is currently following.
+  final followedPlayer = ValueNotifier<String?>(null);
+
+  final Map<String, ShipComponent> _ships = {};
+  final Map<String, PresenceMember> _members = {};
+  final List<PlanetComponent> _planets = [];
+  final List<PowerupComponent> _powerups = [];
+
+  /// Living ships, refreshed once per frame so homing bullets can find their
+  /// nearest target without re-scanning the ship map (and skipping dead ships)
+  /// on every bullet. See [nearestEnemyShipPosition].
+  final List<ShipComponent> _livingShips = [];
+
+  Countdown? _countdown;
+  int _lastClockSeconds = -1;
+  Minimap? _minimap;
+  GridComponent? _grid;
+  int? _activeSeed;
+  String? _followedId;
+  final Set<String> _previousPresentIds = {};
+
+  // Local capture tracking.
+  int? _capturingPlanetId;
+  double _captureElapsed = 0;
+  double _scoreTimer = 0;
+
+  // Local powerup pickup tracking (same hold-to-acquire mechanic as planets).
+  int? _capturingPowerupId;
+  double _powerupCaptureElapsed = 0;
+
+  @override
+  Future<void> onLoad() async {
+    camera.viewfinder.anchor = Anchor.center;
+    camera.viewfinder.position = worldSize / 2;
+    camera.backdrop = Starfield();
+
+    final flameImage = await images.load('green_flame_bullet.png');
+    bulletAnimation = SpriteAnimation.fromFrameData(
+      flameImage,
+      SpriteAnimationData.sequenced(
+        amount: 31,
+        amountPerRow: 8,
+        textureSize: Vector2(48, 96),
+        stepTime: 1 / 30,
+      ),
+    );
+
+    _powerupAnimations = {
+      for (final type in PowerupType.values)
+        type: SpriteAnimation.fromFrameData(
+          await images.load(type.imagePath),
+          SpriteAnimationData.sequenced(
+            amount: 48,
+            amountPerRow: 6,
+            textureSize: Vector2.all(64),
+            stepTime: 0.06,
+          ),
+        ),
+    };
+
+    highScoreService = HighScoreService();
+
+    // Restore the player's chosen call sign from a previous session. A
+    // first-time player has none yet, so prompt them to choose one; the lobby
+    // and the network connection wait until they have.
+    final restored = await _playerStore.load();
+    if (restored == null) {
+      overlays.add(overlayName);
+    } else {
+      player = restored;
+      await _beginSession();
+    }
+  }
+
+  /// Connects to realtime and enters the lobby once [player] is known.
+  Future<void> _beginSession() async {
+    _members[player.id] = PresenceMember(
+      id: player.id,
+      name: player.name,
+      color: player.colorValue,
+      phase: GamePhase.lobby,
+    );
+
+    net = RealtimeClient(player: player);
+    net.onRoster = _onRoster;
+    net.onStart = (event) => _enterMatch(
+      event.seed,
+      event.startedAt,
+      asSpectator: spectateIntent.value,
+    );
+    net.onShipState = _onShipState;
+    net.onShot = _onShot;
+    net.onCapture = _onCapture;
+    net.onPowerupTaken = _onPowerupTaken;
+    net.onTaunt = _onTaunt;
+    await net.connect();
+
+    _sessionStarted = true;
+    unawaited(_refreshHighScores());
+
+    overlays
+      ..remove(overlayName)
+      ..add(overlayLobby);
+    gameFocusNode?.requestFocus();
+  }
+
+  // --- player identity ------------------------------------------------------
+
+  /// Whether the player has chosen a call sign and joined this session.
+  bool get hasChosenName => _sessionStarted;
+
+  /// Handles the call-sign form. For a first-time player this creates their
+  /// identity, persists it and joins the session; for an existing player it
+  /// renames them, persisting the new name and re-broadcasting presence so
+  /// peers see it. A blank name is ignored.
+  Future<void> submitName(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    if (_sessionStarted) {
+      if (trimmed != player.name) {
+        player.name = trimmed;
+        await _playerStore.saveName(trimmed);
+        _members[player.id] = PresenceMember(
+          id: player.id,
+          name: trimmed,
+          color: player.colorValue,
+          phase: GamePhase.lobby,
+        );
+        roster.value = [
+          for (final member in roster.value)
+            member.id == player.id ? _members[player.id]! : member,
+        ];
+        await net.updatePresence();
+      }
+      overlays
+        ..remove(overlayName)
+        ..add(overlayLobby);
+      gameFocusNode?.requestFocus();
+    } else {
+      player = LocalPlayer.create(name: trimmed);
+      await _playerStore.save(player);
+      await _beginSession();
+    }
+  }
+
+  /// Opens the call-sign editor from the lobby.
+  void openNameEditor() {
+    overlays
+      ..remove(overlayLobby)
+      ..add(overlayName);
+  }
+
+  /// Closes the call-sign editor with no change. Only valid once a name has
+  /// been chosen — a first-time player must pick one before continuing.
+  void cancelNameEditor() {
+    if (!_sessionStarted) {
+      return;
+    }
+    overlays
+      ..remove(overlayName)
+      ..add(overlayLobby);
+    gameFocusNode?.requestFocus();
+  }
+
+  Future<void> _refreshHighScores() async {
+    try {
+      highScores.value = await highScoreService.fetchTop();
+    } on Object catch (_) {
+      // Leaderboard is non-critical; ignore transient fetch failures.
+    }
+  }
+
+  /// Reports this client's view of the winner to the database. Every player
+  /// reports, and the database awards the point once a majority agree on the
+  /// same winner — so the win doesn't depend on any single (untrusted) client.
+  /// Only reported on a clear sole winner, and only by clients that played.
+  Future<void> _reportWinner(MatchOutcome outcome) async {
+    final startedAt = _countdown?.startedAt;
+    final iPlayed = _ships.containsKey(player.id);
+    if (iPlayed &&
+        startedAt != null &&
+        outcome.hasCaptures &&
+        !outcome.isTie) {
+      try {
+        await highScoreService.reportWinner(
+          matchId: startedAt,
+          winnerId: outcome.winner.id,
+          winnerName: outcome.winner.name,
+          participantCount: _ships.length,
+        );
+      } on Object catch (_) {
+        // Ignore report failures (offline, no consensus, rate-limited, etc.).
+      }
+    }
+    await _refreshHighScores();
+  }
+
+  // --- lobby / lifecycle ----------------------------------------------------
+
+  bool get canStart =>
+      roster.value.length >= 2 && !isLiveGameRunning && !spectateIntent.value;
+
+  /// A match this client missed the start of, advertised by a playing peer.
+  PresenceMember? get liveGameHost {
+    for (final member in roster.value) {
+      if (member.isPlaying && member.seed != null && member.startedAt != null) {
+        return member;
+      }
+    }
+    return null;
+  }
+
+  bool get isLiveGameRunning => liveGameHost != null;
+
+  void toggleSpectateIntent() {
+    spectateIntent.value = !spectateIntent.value;
+  }
+
+  /// Triggered by the lobby Start button. Picks a shared seed + start time,
+  /// tells everyone, and starts locally.
+  void startMatch() {
+    if (!canStart || phase.value != GamePhase.lobby) {
+      return;
+    }
+    final seed = Random().nextInt(1 << 31);
+    final startedAt = DateTime.now().millisecondsSinceEpoch;
+    net.sendStart(StartEvent(seed: seed, startedAt: startedAt));
+    _enterMatch(seed, startedAt, asSpectator: false);
+  }
+
+  /// Join an already-running match as a spectator (late arrival), using the
+  /// seed/start time advertised by a playing peer.
+  void spectateLiveGame() {
+    final host = liveGameHost;
+    if (host == null || phase.value != GamePhase.lobby) {
+      return;
+    }
+    _enterMatch(host.seed!, host.startedAt!, asSpectator: true);
+  }
+
+  void _enterMatch(int seed, int startedAt, {required bool asSpectator}) {
+    final alreadyIn =
+        phase.value == GamePhase.playing || phase.value == GamePhase.spectating;
+    if (alreadyIn && _activeSeed == seed) {
+      return;
+    }
+    _activeSeed = seed;
+    _resetWorld();
+
+    if (_grid == null) {
+      _grid = GridComponent(worldSize: worldSize);
+      world.add(_grid!);
+    }
+
+    final planetSpecifications = generatePlanets(seed, worldSize);
+    for (final specification in planetSpecifications) {
+      final planet = PlanetComponent(specification);
+      _planets.add(planet);
+      world.add(planet);
+    }
+
+    for (final specification in generatePowerups(
+      seed,
+      worldSize,
+      planetSpecifications,
+    )) {
+      final powerup = PowerupComponent(
+        specification: specification,
+        animation: _powerupAnimations[specification.type]!,
+      );
+      _powerups.add(powerup);
+      world.add(powerup);
+    }
+
+    if (asSpectator) {
+      net.setSpectating();
+      phase.value = GamePhase.spectating;
+    } else {
+      final random = Random();
+      final spawnPosition = Vector2(
+        400 + random.nextDouble() * (worldSize.x - 800),
+        400 + random.nextDouble() * (worldSize.y - 800),
+      );
+      final ship = LocalShip(
+        id: player.id,
+        shipName: player.name,
+        color: player.color,
+        position: spawnPosition,
+      );
+      // Highlight ring so the local ship stands out on the minimap.
+      ship.add(MinimapMarker(shipSize: ship.size));
+      _ships[player.id] = ship;
+      world.add(ship);
+      camera.follow(ship);
+      net.setPlaying(seed, startedAt);
+      phase.value = GamePhase.playing;
+    }
+
+    _countdown = Countdown(startedAt: startedAt);
+    _lastClockSeconds = -1;
+    outcome.value = null;
+    overlays
+      ..remove(overlayLobby)
+      ..remove(overlayResults)
+      ..add(overlayHud);
+    if (asSpectator) {
+      overlays.add(overlaySpectate);
+    }
+    _recomputeScores();
+    if (_minimap == null) {
+      _minimap = Minimap(world: world, worldSize: worldSize);
+      add(_minimap!);
+    }
+    // Ensure keyboard input (thrust/brake) reaches the game, in case a lobby
+    // button held focus when the match started.
+    gameFocusNode?.requestFocus();
+  }
+
+  // --- spectator camera -----------------------------------------------------
+
+  /// Ship ids that a spectator can follow, in a stable order.
+  List<String> get _followableIds => (_ships.keys.toList()..sort());
+
+  void followNextPlayer() => _cycleFollow(1);
+  void followPreviousPlayer() => _cycleFollow(-1);
+
+  void _cycleFollow(int direction) {
+    final ids = _followableIds;
+    if (ids.isEmpty) {
+      return;
+    }
+    final currentIndex = _followedId == null ? -1 : ids.indexOf(_followedId!);
+    final nextIndex = (currentIndex + direction) % ids.length;
+    _followShip(ids[(nextIndex + ids.length) % ids.length]);
+  }
+
+  void _followShip(String id) {
+    final ship = _ships[id];
+    if (ship == null) {
+      return;
+    }
+    _followedId = id;
+    followedPlayer.value = ship.shipName;
+    camera.follow(ship);
+  }
+
+  /// Keep the spectator camera pointed at a valid ship: pick one when we have
+  /// none, or re-target when the followed player leaves.
+  void _ensureSpectatorFollow() {
+    if (phase.value != GamePhase.spectating) {
+      return;
+    }
+    if (_followedId != null && _ships.containsKey(_followedId)) {
+      return;
+    }
+    final ids = _followableIds;
+    if (ids.isEmpty) {
+      _followedId = null;
+      followedPlayer.value = null;
+      camera.stop();
+    } else {
+      _followShip(ids.first);
+    }
+  }
+
+  void _endMatch() {
+    phase.value = GamePhase.results;
+    _recomputeScores();
+    final scoreEntries = scores.value;
+    final topPlanets = scoreEntries.isEmpty ? 0 : scoreEntries.first.planets;
+    final leaders = scoreEntries
+        .where((entry) => entry.planets == topPlanets)
+        .toList();
+    final matchOutcome = MatchOutcome(leaders: leaders, topPlanets: topPlanets);
+    outcome.value = matchOutcome;
+    unawaited(_reportWinner(matchOutcome));
+    SoundService.instance.playSoundEffect(SoundEffect.gameOver);
+    overlays
+      ..remove(overlayHud)
+      ..remove(overlaySpectate)
+      ..add(overlayResults);
+  }
+
+  /// Back to the lobby from the results screen.
+  void returnToLobby() {
+    _resetWorld();
+    _minimap?.removeFromParent();
+    _minimap = null;
+    _grid?.removeFromParent();
+    _grid = null;
+    _countdown = null;
+    _activeSeed = null;
+    _followedId = null;
+    followedPlayer.value = null;
+    clock.value = Countdown.format(Countdown.gameDuration);
+    net.setLobby();
+    phase.value = GamePhase.lobby;
+    unawaited(_refreshHighScores());
+    overlays
+      ..remove(overlayResults)
+      ..remove(overlayHud)
+      ..remove(overlaySpectate)
+      ..add(overlayLobby);
+  }
+
+  void _resetWorld() {
+    for (final ship in _ships.values) {
+      ship.removeFromParent();
+    }
+    _ships.clear();
+    for (final planet in _planets) {
+      planet.removeFromParent();
+    }
+    _planets.clear();
+    for (final powerup in _powerups) {
+      powerup.removeFromParent();
+    }
+    _powerups.clear();
+    world.children.whereType<Bullet>().forEach(
+      (bullet) => bullet.removeFromParent(),
+    );
+    camera.viewfinder.position = worldSize / 2;
+    _capturingPlanetId = null;
+    _captureElapsed = 0;
+    _capturingPowerupId = null;
+    _powerupCaptureElapsed = 0;
+  }
+
+  // --- networking callbacks -------------------------------------------------
+
+  void _onRoster(List<PresenceMember> members) {
+    for (final member in members) {
+      _members[member.id] = member;
+    }
+    roster.value = members;
+
+    final presentIds = members.map((member) => member.id).toSet();
+
+    // Re-send our owned planets so anyone who just joined (e.g. a spectator)
+    // sees the current ownership. Each owner re-broadcasts only its own
+    // planets; earliest-wins reconciliation makes this idempotent.
+    final newcomers = presentIds.difference(_previousPresentIds);
+    _previousPresentIds
+      ..clear()
+      ..addAll(presentIds);
+    if (newcomers.isNotEmpty &&
+        newcomers.any((id) => id != player.id) &&
+        phase.value == GamePhase.playing) {
+      _rebroadcastOwnedCaptures();
+    }
+
+    // Drop ships + release planets for players who left.
+    final departedPlayerIds = _ships.keys
+        .where((id) => id != player.id && !presentIds.contains(id))
+        .toList();
+    for (final id in departedPlayerIds) {
+      _ships.remove(id)?.removeFromParent();
+      for (final planet in _planets) {
+        if (planet.ownerId == id) {
+          planet
+            ..ownerId = null
+            ..ownerColor = null
+            ..capturedAt = 0;
+        }
+      }
+    }
+    _ensureSpectatorFollow();
+    if (phase.value != GamePhase.lobby) {
+      _recomputeScores();
+    }
+  }
+
+  void _rebroadcastOwnedCaptures() {
+    for (final planet in _planets) {
+      if (planet.ownerId == player.id) {
+        net.sendCapture(
+          CaptureEvent(
+            planetId: planet.specification.id,
+            ownerId: player.id,
+            capturedAt: planet.capturedAt,
+          ),
+        );
+      }
+    }
+  }
+
+  void _onShipState(ShipState state) {
+    // Remote ships exist whenever a match is running, whether we are playing
+    // or spectating it.
+    if (phase.value != GamePhase.playing &&
+        phase.value != GamePhase.spectating) {
+      return;
+    }
+    var ship = _ships[state.id] as RemoteShip?;
+    if (ship == null) {
+      ship = RemoteShip(
+        id: state.id,
+        shipName: state.name,
+        color: Color(state.color),
+        position: Vector2(state.positionX, state.positionY),
+      );
+      _ships[state.id] = ship;
+      world.add(ship);
+      _ensureSpectatorFollow();
+    }
+    ship.applyState(
+      position: Vector2(state.positionX, state.positionY),
+      facing: state.angle,
+      velocity: Vector2(state.velocityX, state.velocityY),
+      alive: state.alive,
+    );
+  }
+
+  void _onShot(ShotEvent event) {
+    spawnBullet(
+      ownerId: event.ownerId,
+      origin: Vector2(event.positionX, event.positionY),
+      angle: event.angle,
+      speed: event.speed,
+      homing: event.homing,
+    );
+  }
+
+  void _onCapture(CaptureEvent event) {
+    final planet = _planetById(event.planetId);
+    if (planet == null) {
+      return;
+    }
+    // Latest-wins reconciliation, so a planet can always be taken over by a
+    // more recent capture — including when several ships contest one already
+    // owned. A capture is accepted only if it is strictly newer than the
+    // current ownership, or, on an exact-timestamp tie, has the higher ownerId
+    // (a stable tiebreak so every client converges on the same owner). This
+    // also harmlessly ignores an owner re-broadcasting its existing capture.
+    if (planet.capturedAt != 0) {
+      final current = planet.capturedAt;
+      final winsByTime = event.capturedAt > current;
+      final winsByTiebreak =
+          event.capturedAt == current &&
+          event.ownerId.compareTo(planet.ownerId ?? '') > 0;
+      if (!winsByTime && !winsByTiebreak) {
+        return;
+      }
+    }
+    planet
+      ..ownerId = event.ownerId
+      ..ownerColor = Color(_members[event.ownerId]?.color ?? 0xFFFFFFFF)
+      ..capturedAt = event.capturedAt;
+    _recomputeScores();
+  }
+
+  // --- helpers used by components ------------------------------------------
+
+  void fireBullet({
+    required String ownerId,
+    required Vector2 origin,
+    required double angle,
+    required double speed,
+    bool homing = false,
+  }) {
+    spawnBullet(
+      ownerId: ownerId,
+      origin: origin,
+      angle: angle,
+      speed: speed,
+      homing: homing,
+    );
+    net.sendShot(
+      ShotEvent(
+        id: '${player.id}-${DateTime.now().microsecondsSinceEpoch}',
+        ownerId: ownerId,
+        positionX: origin.x,
+        positionY: origin.y,
+        angle: angle,
+        speed: speed,
+        firedAt: DateTime.now().millisecondsSinceEpoch,
+        homing: homing,
+      ),
+    );
+  }
+
+  void spawnBullet({
+    required String ownerId,
+    required Vector2 origin,
+    required double angle,
+    required double speed,
+    bool homing = false,
+  }) {
+    world.add(
+      Bullet(
+        ownerId: ownerId,
+        animation: bulletAnimation,
+        position: origin.clone(),
+        velocity: Vector2(cos(angle), sin(angle))..scale(speed),
+        homing: homing,
+      ),
+    );
+  }
+
+  void broadcastShipState(LocalShip ship) {
+    net.sendState(
+      ShipState(
+        id: player.id,
+        name: player.name,
+        color: player.colorValue,
+        positionX: ship.position.x,
+        positionY: ship.position.y,
+        angle: ship.facing,
+        velocityX: ship.velocity.x,
+        velocityY: ship.velocity.y,
+        alive: ship.alive,
+      ),
+    );
+  }
+
+  // --- main loop ------------------------------------------------------------
+
+  @override
+  void update(double deltaTime) {
+    // Refresh the living-ship list before the component tree updates, so homing
+    // bullets (updated inside super.update) can query it this frame.
+    _livingShips.clear();
+    for (final ship in _ships.values) {
+      if (ship.alive) {
+        _livingShips.add(ship);
+      }
+    }
+
+    super.update(deltaTime);
+
+    // Re-project the cursor to world space each frame. The camera follows the
+    // ship, so a stationary cursor keeps the same screen-relative aim direction
+    // instead of the ship turning back toward a stale world point.
+    if (_hasPointer) {
+      camera.globalToLocal(_lastPointerScreen, output: aimWorld);
+    }
+
+    // Fade out the powerup toast regardless of phase, so it doesn't linger.
+    if (_powerupMessageTimer > 0) {
+      _powerupMessageTimer -= deltaTime;
+      if (_powerupMessageTimer <= 0) {
+        powerupMessage.value = null;
+      }
+    }
+
+    final playing = phase.value == GamePhase.playing;
+    final spectating = phase.value == GamePhase.spectating;
+    if (!playing && !spectating) {
+      return;
+    }
+
+    // The countdown runs identically for players and spectators. Only reformat
+    // the clock string when the whole-second value changes, so the per-frame
+    // path allocates nothing.
+    final countdown = _countdown;
+    if (countdown != null) {
+      final remainingMilliseconds = countdown.remainingMilliseconds();
+      final remainingSeconds = remainingMilliseconds ~/ 1000;
+      if (remainingSeconds != _lastClockSeconds) {
+        _lastClockSeconds = remainingSeconds;
+        clock.value = Countdown.formatSeconds(remainingSeconds);
+      }
+      if (remainingMilliseconds == 0) {
+        _endMatch();
+        return;
+      }
+    }
+
+    // Only an actual player simulates captures, powerups and damage.
+    if (playing) {
+      _updateCapture(deltaTime);
+      _updatePowerups(deltaTime);
+      _resolveHits();
+    }
+
+    _scoreTimer -= deltaTime;
+    if (_scoreTimer <= 0) {
+      _scoreTimer = 0.5;
+      _recomputeScores();
+    }
+  }
+
+  void _updateCapture(double deltaTime) {
+    final ship = _ships[player.id] as LocalShip?;
+    if (ship == null) {
+      return;
+    }
+
+    PlanetComponent? hoveredPlanet;
+    for (final planet in _planets) {
+      if (planet.center.distanceTo(ship.position) <= planet.radius) {
+        hoveredPlanet = planet;
+        break;
+      }
+    }
+
+    for (final planet in _planets) {
+      if (planet != hoveredPlanet) {
+        planet.captureProgress = 0;
+      }
+    }
+
+    if (hoveredPlanet == null) {
+      _capturingPlanetId = null;
+      _captureElapsed = 0;
+      return;
+    }
+
+    if (_capturingPlanetId != hoveredPlanet.specification.id) {
+      _capturingPlanetId = hoveredPlanet.specification.id;
+      _captureElapsed = 0;
+    }
+
+    if (hoveredPlanet.ownerId == player.id) {
+      hoveredPlanet.captureProgress = 1;
+      return;
+    }
+
+    _captureElapsed += deltaTime;
+    hoveredPlanet.captureProgress = (_captureElapsed / captureSeconds).clamp(
+      0,
+      1,
+    );
+
+    if (_captureElapsed >= captureSeconds) {
+      final capturedAt = DateTime.now().millisecondsSinceEpoch;
+      hoveredPlanet
+        ..ownerId = player.id
+        ..ownerColor = player.color
+        ..capturedAt = capturedAt;
+      net.sendCapture(
+        CaptureEvent(
+          planetId: hoveredPlanet.specification.id,
+          ownerId: player.id,
+          capturedAt: capturedAt,
+        ),
+      );
+      _captureElapsed = 0;
+      _recomputeScores();
+    }
+  }
+
+  /// Picks up a powerup with the same hold-to-acquire mechanic as a planet
+  /// capture: the local ship must stay on it for [captureSeconds], filling the
+  /// ring drawn around it. On completion it applies the effect, shows the
+  /// toast, animates the powerup away, and tells peers to remove it too.
+  void _updatePowerups(double deltaTime) {
+    final ship = _ships[player.id] as LocalShip?;
+    if (ship == null) {
+      return;
+    }
+
+    PowerupComponent? hoveredPowerup;
+    for (final powerup in _powerups) {
+      if (powerup.collected) {
+        continue;
+      }
+      if (powerup.position.distanceTo(ship.position) <=
+          powerup.radius + ship.radius) {
+        hoveredPowerup = powerup;
+        break;
+      }
+    }
+
+    for (final powerup in _powerups) {
+      if (powerup != hoveredPowerup) {
+        powerup.captureProgress = 0;
+      }
+    }
+
+    if (hoveredPowerup == null) {
+      _capturingPowerupId = null;
+      _powerupCaptureElapsed = 0;
+      return;
+    }
+
+    if (_capturingPowerupId != hoveredPowerup.id) {
+      _capturingPowerupId = hoveredPowerup.id;
+      _powerupCaptureElapsed = 0;
+    }
+
+    _powerupCaptureElapsed += deltaTime;
+    hoveredPowerup.captureProgress = (_powerupCaptureElapsed / captureSeconds)
+        .clamp(0, 1);
+
+    if (_powerupCaptureElapsed >= captureSeconds) {
+      hoveredPowerup.collect();
+      ship.applyPowerup(hoveredPowerup.type);
+      _showPowerupMessage(hoveredPowerup.type.pickupMessage);
+      SoundService.instance.playSoundEffect(SoundEffect.powerup);
+      net.sendPowerupTaken(
+        PowerupTakenEvent(powerupId: hoveredPowerup.id, byId: player.id),
+      );
+      _capturingPowerupId = null;
+      _powerupCaptureElapsed = 0;
+    }
+  }
+
+  /// A peer picked up a powerup: animate the same one away on our side.
+  void _onPowerupTaken(PowerupTakenEvent event) {
+    for (final powerup in _powerups) {
+      if (powerup.id == event.powerupId && !powerup.collected) {
+        powerup.collect();
+        break;
+      }
+    }
+  }
+
+  void _showPowerupMessage(String message) {
+    powerupMessage.value = message;
+    _powerupMessageTimer = _powerupMessageDuration;
+  }
+
+  // --- taunts ---------------------------------------------------------------
+
+  /// Plays [emoji] with a random taunt phrase over the local ship and tells
+  /// peers to show the same over our ship.
+  void sendTaunt(String emoji) {
+    if (_ships[player.id] == null) {
+      return;
+    }
+    final phrase = Taunts.randomPhrase();
+    _showTaunt(player.id, emoji, phrase);
+    net.sendTaunt(TauntEvent(byId: player.id, emoji: emoji, taunt: phrase));
+  }
+
+  void _onTaunt(TauntEvent event) =>
+      _showTaunt(event.byId, event.emoji, event.taunt);
+
+  /// Shows a taunt bubble above [shipId]'s ship, replacing any current one.
+  void _showTaunt(String shipId, String emoji, String taunt) {
+    final ship = _ships[shipId];
+    if (ship == null) {
+      return;
+    }
+    for (final bubble in ship.children.whereType<TauntBubble>().toList()) {
+      bubble.removeFromParent();
+    }
+    ship.add(
+      TauntBubble(
+        emoji: emoji,
+        taunt: taunt,
+        position: Vector2(ship.size.x / 2, -28),
+      ),
+    );
+  }
+
+  /// The position of the nearest living enemy ship within [maxDistance] of
+  /// [from], or null. Used by homing bullets; returns the live ship vector
+  /// (read-only) to avoid allocating. Compares squared distances to avoid a
+  /// `sqrt` per ship, and scans the cached [_livingShips] list.
+  Vector2? nearestEnemyShipPosition(
+    String ownerId,
+    Vector2 from,
+    double maxDistance,
+  ) {
+    Vector2? nearest;
+    var nearestSquared = maxDistance * maxDistance;
+    for (final ship in _livingShips) {
+      if (ship.id == ownerId) {
+        continue;
+      }
+      final squared = ship.position.distanceToSquared(from);
+      if (squared < nearestSquared) {
+        nearestSquared = squared;
+        nearest = ship.position;
+      }
+    }
+    return nearest;
+  }
+
+  void _resolveHits() {
+    final localShip = _ships[player.id] as LocalShip?;
+    // Snapshot into a reused buffer so removing a bullet mid-loop is safe
+    // without allocating a fresh list every frame.
+    _bulletScratch
+      ..clear()
+      ..addAll(world.children.whereType<Bullet>());
+    for (final bullet in _bulletScratch) {
+      for (final ship in _ships.values) {
+        if (ship.id == bullet.ownerId || !ship.alive) {
+          continue;
+        }
+        if (bullet.position.distanceTo(ship.position) <=
+            ship.radius + bullet.radius) {
+          bullet.removeFromParent();
+          // Victim-authoritative: only apply knockback to our own ship.
+          if (ship == localShip && bullet.ownerId != player.id) {
+            localShip!.applyKnockback(
+              atan2(bullet.velocity.y, bullet.velocity.x),
+            );
+            SoundService.instance.playSoundEffect(SoundEffect.hit);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  void _recomputeScores() {
+    final planetCounts = <String, int>{};
+    for (final planet in _planets) {
+      final owner = planet.ownerId;
+      if (owner != null) {
+        planetCounts[owner] = (planetCounts[owner] ?? 0) + 1;
+      }
+    }
+    final scoreEntries =
+        _members.values
+            .map(
+              (member) => ScoreEntry(
+                id: member.id,
+                name: member.name,
+                color: Color(member.color),
+                planets: planetCounts[member.id] ?? 0,
+              ),
+            )
+            .toList()
+          ..sort((first, second) => second.planets.compareTo(first.planets));
+    scores.value = scoreEntries;
+  }
+
+  PlanetComponent? _planetById(int id) {
+    for (final planet in _planets) {
+      if (planet.specification.id == id) {
+        return planet;
+      }
+    }
+    return null;
+  }
+
+  // --- input ----------------------------------------------------------------
+  //
+  // Aim follows the cursor via hover ([onPointerMove]); holding the primary
+  // button fires. A stationary press is a tap, and a press that moves becomes a
+  // drag, so firing is driven from both — and a drag also re-aims, since hover
+  // events stop while a button is held.
+
+  @override
+  void onPointerMove(PointerMoveEvent event) {
+    aimAtScreen(event.localPosition.x, event.localPosition.y);
+  }
+
+  @override
+  void onTapDown(TapDownEvent event) {
+    // Browsers block audio until a user gesture, so kick off the music on the
+    // first interaction (idempotent / settings-gated).
+    SoundService.instance.startMusic();
+    firing = true;
+  }
+
+  @override
+  void onTapUp(TapUpEvent event) => firing = false;
+
+  @override
+  void onTapCancel(TapCancelEvent event) => firing = false;
+
+  @override
+  void onDragStart(DragStartEvent event) {
+    super.onDragStart(event);
+    SoundService.instance.startMusic();
+    firing = true;
+    aimAtScreen(event.localPosition.x, event.localPosition.y);
+  }
+
+  @override
+  void onDragUpdate(DragUpdateEvent event) {
+    aimAtScreen(event.localEndPosition.x, event.localEndPosition.y);
+  }
+
+  @override
+  void onDragEnd(DragEndEvent event) {
+    super.onDragEnd(event);
+    firing = false;
+  }
+
+  @override
+  void onDragCancel(DragCancelEvent event) {
+    super.onDragCancel(event);
+    firing = false;
+  }
+
+  /// Records the cursor's widget-local position to aim the local ship at.
+  /// The screen position is stored (not converted here); [aimWorld] is derived
+  /// from it every frame in [update] so it stays correct as the camera moves.
+  void aimAtScreen(double x, double y) {
+    _lastPointerScreen.setValues(x, y);
+    _hasPointer = true;
+  }
+
+  @override
+  void onRemove() {
+    if (_sessionStarted) {
+      net.dispose();
+    }
+    phase.dispose();
+    roster.dispose();
+    clock.dispose();
+    scores.dispose();
+    outcome.dispose();
+    highScores.dispose();
+    powerupMessage.dispose();
+    spectateIntent.dispose();
+    followedPlayer.dispose();
+    super.onRemove();
+  }
+}

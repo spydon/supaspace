@@ -1,0 +1,40 @@
+name: Web release build
+
+# Builds a wasm-enabled web release on every push to main (and on demand).
+# The Supabase publishable key is never committed; it is injected here from the
+# SUPABASE_ANON_KEY repository secret. If the secret is unset the build still
+# compiles (the key is simply empty at runtime).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate code (freezed / json_serializable)
+        run: dart run build_runner build
+
+      - name: Build web (wasm, release)
+        run: >-
+          flutter build web --release --wasm
+          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-release
+          path: build/web
