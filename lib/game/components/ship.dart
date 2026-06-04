@@ -78,6 +78,13 @@ abstract class ShipComponent extends PositionComponent {
   @override
   Future<void> onLoad() async {
     add(_nameTag);
+    // Every ship carries an active hitbox so bullets (passive) collide with —
+    // and despawn on — any ship. Only the local ship reacts (knockback); see
+    // LocalShip.onCollisionStart.
+    add(
+      CircleHitbox(radius: radius, position: size / 2, anchor: Anchor.center)
+        ..collisionType = CollisionType.active,
+    );
   }
 
   @override
@@ -188,27 +195,15 @@ class LocalShip extends ShipComponent
   }
 
   @override
-  Future<void> onLoad() async {
-    await super.onLoad();
-    // The only active hitbox in the game; bullets are passive, so the engine
-    // only ever tests this ship against bullets.
-    add(
-      CircleHitbox(radius: radius, position: size / 2, anchor: Anchor.center)
-        ..collisionType = CollisionType.active,
-    );
-  }
-
-  @override
   void onCollisionStart(
     Set<Vector2> intersectionPoints,
     PositionComponent other,
   ) {
     super.onCollisionStart(intersectionPoints, other);
     // Victim-authoritative: get knocked back by an incoming bullet that isn't
-    // ours, and consume it on this client.
+    // ours. The bullet despawns itself (see Bullet.onCollisionStart).
     if (other is Bullet && other.ownerId != id) {
       applyKnockback(atan2(other.velocity.y, other.velocity.x));
-      other.removeFromParent();
     }
   }
 

@@ -162,14 +162,7 @@ class SpaceGame extends FlameGame
   String? _followedId;
   final Set<String> _previousPresentIds = {};
 
-  // Local capture tracking.
-  int? _capturingPlanetId;
-  double _captureElapsed = 0;
   double _scoreTimer = 0;
-
-  // Local powerup pickup tracking (same hold-to-acquire mechanic as planets).
-  int? _capturingPowerupId;
-  double _powerupCaptureElapsed = 0;
 
   @override
   Future<void> onLoad() async {
@@ -180,6 +173,11 @@ class SpaceGame extends FlameGame
     // Cached bullet query, used to clear bullets between matches without
     // scanning every world child.
     world.children.register<Bullet>();
+
+    // Hold-to-acquire logic for planets and powerups runs in its own
+    // components (they self-gate on the playing phase + local ship).
+    add(CaptureController());
+    add(PowerupController());
 
     final flameImage = await images.load('green_flame_bullet.png');
     bulletAnimation = SpriteAnimation.fromFrameData(
@@ -574,10 +572,6 @@ class SpaceGame extends FlameGame
       bullet.removeFromParent();
     }
     camera.viewfinder.position = worldSize / 2;
-    _capturingPlanetId = null;
-    _captureElapsed = 0;
-    _capturingPowerupId = null;
-    _powerupCaptureElapsed = 0;
   }
 
   // --- networking callbacks -------------------------------------------------
@@ -822,137 +816,14 @@ class SpaceGame extends FlameGame
       }
     }
 
-    // Only an actual player simulates captures and powerups. Bullet hits are
-    // handled by the local ship's collision callback (victim-authoritative).
-    if (playing) {
-      _updateCapture(deltaTime);
-      _updatePowerups(deltaTime);
-    }
+    // Captures and powerup pickups run in their own components
+    // (CaptureController / PowerupController); bullet hits are handled by the
+    // local ship's collision callback (victim-authoritative).
 
     _scoreTimer -= deltaTime;
     if (_scoreTimer <= 0) {
       _scoreTimer = 0.5;
       _recomputeScores();
-    }
-  }
-
-  void _updateCapture(double deltaTime) {
-    final ship = _ships[player.id] as LocalShip?;
-    if (ship == null) {
-      return;
-    }
-
-    PlanetComponent? hoveredPlanet;
-    for (final planet in _planets) {
-      final radius = planet.radius;
-      if (planet.center.distanceToSquared(ship.position) <= radius * radius) {
-        hoveredPlanet = planet;
-        break;
-      }
-    }
-
-    for (final planet in _planets) {
-      if (planet != hoveredPlanet) {
-        planet.captureProgress = 0;
-      }
-    }
-
-    if (hoveredPlanet == null) {
-      _capturingPlanetId = null;
-      _captureElapsed = 0;
-      return;
-    }
-
-    if (_capturingPlanetId != hoveredPlanet.specification.id) {
-      _capturingPlanetId = hoveredPlanet.specification.id;
-      _captureElapsed = 0;
-    }
-
-    if (hoveredPlanet.ownerId == player.id) {
-      hoveredPlanet.captureProgress = 1;
-      return;
-    }
-
-    _captureElapsed += deltaTime;
-    hoveredPlanet.captureProgress = (_captureElapsed / captureSeconds).clamp(
-      0,
-      1,
-    );
-
-    if (_captureElapsed >= captureSeconds) {
-      final previousOwnerId = hoveredPlanet.ownerId;
-      final capturedAt = DateTime.now().millisecondsSinceEpoch;
-      hoveredPlanet
-        ..ownerId = player.id
-        ..ownerColor = player.color
-        ..capturedAt = capturedAt;
-      net.sendCapture(
-        CaptureEvent(
-          planetId: hoveredPlanet.specification.id,
-          ownerId: player.id,
-          capturedAt: capturedAt,
-        ),
-      );
-      _showToast(_captureMessage(previousOwnerId));
-      _captureElapsed = 0;
-      _recomputeScores();
-    }
-  }
-
-  /// Picks up a powerup with the same hold-to-acquire mechanic as a planet
-  /// capture: the local ship must stay on it for [captureSeconds], filling the
-  /// ring drawn around it. On completion it applies the effect, shows the
-  /// toast, animates the powerup away, and tells peers to remove it too.
-  void _updatePowerups(double deltaTime) {
-    final ship = _ships[player.id] as LocalShip?;
-    if (ship == null) {
-      return;
-    }
-
-    PowerupComponent? hoveredPowerup;
-    final shipRadius = ship.radius;
-    for (final powerup in _powerups) {
-      if (powerup.collected) {
-        continue;
-      }
-      final reach = powerup.radius + shipRadius;
-      if (powerup.position.distanceToSquared(ship.position) <= reach * reach) {
-        hoveredPowerup = powerup;
-        break;
-      }
-    }
-
-    for (final powerup in _powerups) {
-      if (powerup != hoveredPowerup) {
-        powerup.captureProgress = 0;
-      }
-    }
-
-    if (hoveredPowerup == null) {
-      _capturingPowerupId = null;
-      _powerupCaptureElapsed = 0;
-      return;
-    }
-
-    if (_capturingPowerupId != hoveredPowerup.id) {
-      _capturingPowerupId = hoveredPowerup.id;
-      _powerupCaptureElapsed = 0;
-    }
-
-    _powerupCaptureElapsed += deltaTime;
-    hoveredPowerup.captureProgress = (_powerupCaptureElapsed / captureSeconds)
-        .clamp(0, 1);
-
-    if (_powerupCaptureElapsed >= captureSeconds) {
-      hoveredPowerup.collect();
-      ship.applyPowerup(hoveredPowerup.type);
-      _showToast(hoveredPowerup.type.pickupMessage);
-      SoundService.instance.playSoundEffect(SoundEffect.powerup);
-      net.sendPowerupTaken(
-        PowerupTakenEvent(powerupId: hoveredPowerup.id, byId: player.id),
-      );
-      _capturingPowerupId = null;
-      _powerupCaptureElapsed = 0;
     }
   }
 
@@ -1146,5 +1017,143 @@ class SpaceGame extends FlameGame
     spectateIntent.dispose();
     followedPlayer.dispose();
     super.onRemove();
+  }
+}
+
+/// Drives planet capture for the local player: holding the ship over a planet
+/// for [SpaceGame.captureSeconds] fills its ring and takes it. Lives in the
+/// same library as [SpaceGame] so it can read its private state. Active only
+/// while playing; resets itself otherwise.
+class CaptureController extends Component with HasGameReference<SpaceGame> {
+  int? _capturingPlanetId;
+  double _elapsed = 0;
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    if (game.phase.value != GamePhase.playing) {
+      _capturingPlanetId = null;
+      _elapsed = 0;
+      return;
+    }
+    final ship = game._ships[game.player.id] as LocalShip?;
+    if (ship == null) {
+      return;
+    }
+
+    PlanetComponent? hovered;
+    for (final planet in game._planets) {
+      final radius = planet.radius;
+      if (planet.center.distanceToSquared(ship.position) <= radius * radius) {
+        hovered = planet;
+        break;
+      }
+    }
+    for (final planet in game._planets) {
+      if (planet != hovered) {
+        planet.captureProgress = 0;
+      }
+    }
+
+    if (hovered == null) {
+      _capturingPlanetId = null;
+      _elapsed = 0;
+      return;
+    }
+    if (_capturingPlanetId != hovered.specification.id) {
+      _capturingPlanetId = hovered.specification.id;
+      _elapsed = 0;
+    }
+    if (hovered.ownerId == game.player.id) {
+      hovered.captureProgress = 1;
+      return;
+    }
+
+    _elapsed += dt;
+    hovered.captureProgress = (_elapsed / SpaceGame.captureSeconds).clamp(0, 1);
+
+    if (_elapsed >= SpaceGame.captureSeconds) {
+      final previousOwnerId = hovered.ownerId;
+      final capturedAt = DateTime.now().millisecondsSinceEpoch;
+      hovered
+        ..ownerId = game.player.id
+        ..ownerColor = game.player.color
+        ..capturedAt = capturedAt;
+      game.net.sendCapture(
+        CaptureEvent(
+          planetId: hovered.specification.id,
+          ownerId: game.player.id,
+          capturedAt: capturedAt,
+        ),
+      );
+      game._showToast(game._captureMessage(previousOwnerId));
+      _elapsed = 0;
+      game._recomputeScores();
+    }
+  }
+}
+
+/// Drives powerup pickup for the local player — same hold-to-acquire mechanic
+/// as [CaptureController]: hold over a powerup to fill its ring, then apply the
+/// effect, toast, animate it away and tell peers. Active only while playing.
+class PowerupController extends Component with HasGameReference<SpaceGame> {
+  int? _capturingPowerupId;
+  double _elapsed = 0;
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    if (game.phase.value != GamePhase.playing) {
+      _capturingPowerupId = null;
+      _elapsed = 0;
+      return;
+    }
+    final ship = game._ships[game.player.id] as LocalShip?;
+    if (ship == null) {
+      return;
+    }
+
+    PowerupComponent? hovered;
+    final shipRadius = ship.radius;
+    for (final powerup in game._powerups) {
+      if (powerup.collected) {
+        continue;
+      }
+      final reach = powerup.radius + shipRadius;
+      if (powerup.position.distanceToSquared(ship.position) <= reach * reach) {
+        hovered = powerup;
+        break;
+      }
+    }
+    for (final powerup in game._powerups) {
+      if (powerup != hovered) {
+        powerup.captureProgress = 0;
+      }
+    }
+
+    if (hovered == null) {
+      _capturingPowerupId = null;
+      _elapsed = 0;
+      return;
+    }
+    if (_capturingPowerupId != hovered.id) {
+      _capturingPowerupId = hovered.id;
+      _elapsed = 0;
+    }
+
+    _elapsed += dt;
+    hovered.captureProgress = (_elapsed / SpaceGame.captureSeconds).clamp(0, 1);
+
+    if (_elapsed >= SpaceGame.captureSeconds) {
+      hovered.collect();
+      ship.applyPowerup(hovered.type);
+      game._showToast(hovered.type.pickupMessage);
+      SoundService.instance.playSoundEffect(SoundEffect.powerup);
+      game.net.sendPowerupTaken(
+        PowerupTakenEvent(powerupId: hovered.id, byId: game.player.id),
+      );
+      _capturingPowerupId = null;
+      _elapsed = 0;
+    }
   }
 }

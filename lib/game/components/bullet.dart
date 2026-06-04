@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
+import 'package:supaspace/game/components/ship.dart';
 import 'package:supaspace/game/space_game.dart';
 
 /// A projectile, drawn as an animated green flame. Spawned on every client from
@@ -13,7 +14,8 @@ import 'package:supaspace/game/space_game.dart';
 /// If [homing], it gently curves toward the nearest enemy ship once one is
 /// close (the "homing shots" powerup). The flame sprite points "down" (+Y) in
 /// its frames, so it is rotated to face the direction of travel.
-class Bullet extends SpriteAnimationComponent with HasGameReference<SpaceGame> {
+class Bullet extends SpriteAnimationComponent
+    with HasGameReference<SpaceGame>, CollisionCallbacks {
   Bullet({
     required this.ownerId,
     required SpriteAnimation animation,
@@ -51,6 +53,19 @@ class Bullet extends SpriteAnimationComponent with HasGameReference<SpaceGame> {
       CircleHitbox(radius: radius, position: size / 2, anchor: Anchor.center)
         ..collisionType = CollisionType.passive,
     );
+  }
+
+  @override
+  void onCollisionStart(
+    Set<Vector2> intersectionPoints,
+    PositionComponent other,
+  ) {
+    super.onCollisionStart(intersectionPoints, other);
+    // Despawn on hitting any ship that isn't the owner (visual on every
+    // client). The victim ship handles its own knockback.
+    if (other is ShipComponent && other.id != ownerId) {
+      removeFromParent();
+    }
   }
 
   @override
