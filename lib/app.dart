@@ -85,7 +85,7 @@ class _Loading extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'SUPASPACE',
+              'Supaspace',
               style: TextStyle(
                 color: Color(0xFF66E0FF),
                 fontSize: 28,

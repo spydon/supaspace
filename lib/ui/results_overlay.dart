@@ -87,7 +87,7 @@ class _ResultsOverlayState extends State<ResultsOverlay>
                       ),
                     ),
                     const SizedBox(height: 14),
-                    ..._outcomeHeadline(outcome),
+                    _OutcomeHeadline(outcome: outcome),
                     const SizedBox(height: 22),
                     ValueListenableBuilder<List<ScoreEntry>>(
                       valueListenable: game.scores,
@@ -162,68 +162,81 @@ class _ResultsOverlayState extends State<ResultsOverlay>
     );
   }
 
-  /// The headline shown above the standings: a sole winner, a tie between the
-  /// top players, or a no-captures draw.
-  List<Widget> _outcomeHeadline(MatchOutcome? outcome) {
+}
+
+/// The headline shown above the standings: a sole winner, a tie between the top
+/// players, or a no-captures draw.
+class _OutcomeHeadline extends StatelessWidget {
+  const _OutcomeHeadline({required this.outcome});
+
+  final MatchOutcome? outcome;
+
+  @override
+  Widget build(BuildContext context) {
+    final outcome = this.outcome;
     if (outcome == null || !outcome.hasCaptures) {
-      return const [
-        Text(
-          'No planets captured — a draw!',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-          ),
+      return const Text(
+        'No planets captured — a draw!',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
         ),
-      ];
+      );
     }
 
     if (outcome.isTie) {
-      return [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (final leader in outcome.leaders)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: _Glow(color: leader.color),
-              ),
-          ],
-        ),
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (final leader in outcome.leaders)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: _Glow(color: leader.color),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            "It's a draw!",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Text(
+            '${outcome.leaders.length} pilots tied with '
+            '${outcome.topPlanets} planets',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+          ),
+        ],
+      );
+    }
+
+    final winner = outcome.winner;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _Glow(color: winner.color),
         const SizedBox(height: 12),
-        const Text(
-          "It's a draw!",
-          style: TextStyle(
+        Text(
+          '${winner.name} wins!',
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 28,
             fontWeight: FontWeight.w900,
           ),
         ),
         Text(
-          '${outcome.leaders.length} pilots tied with '
-          '${outcome.topPlanets} planets',
+          '${winner.planets} planets captured',
           style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
         ),
-      ];
-    }
-
-    final winner = outcome.winner;
-    return [
-      _Glow(color: winner.color),
-      const SizedBox(height: 12),
-      Text(
-        '${winner.name} wins!',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 28,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      Text(
-        '${winner.planets} planets captured',
-        style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-      ),
-    ];
+      ],
+    );
   }
 }
 

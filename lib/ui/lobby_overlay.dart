@@ -31,7 +31,7 @@ class LobbyOverlay extends StatelessWidget {
                     curve: Curves.easeOut,
                     builder: (context, value, child) =>
                         Opacity(opacity: value, child: child),
-                    child: _buildPanel(),
+                    child: _LobbyPanel(game: game),
                   ),
                 ),
               ),
@@ -54,7 +54,17 @@ class LobbyOverlay extends StatelessWidget {
     );
   }
 
-  Widget _buildPanel() {
+}
+
+/// The lobby's centered content panel: title, your call sign, the live roster,
+/// the start/spectate actions, the leaderboard and the controls.
+class _LobbyPanel extends StatelessWidget {
+  const _LobbyPanel({required this.game});
+
+  final SpaceGame game;
+
+  @override
+  Widget build(BuildContext context) {
     return _Panel(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -299,7 +309,7 @@ class _LobbyActions extends StatelessWidget {
             onPressed: game.spectateLiveGame,
           ),
           const SizedBox(height: 8),
-          _hint('A match is already in progress'),
+          const _Hint('A match is already in progress'),
         ],
       );
     }
@@ -315,7 +325,7 @@ class _LobbyActions extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             if (spectate)
-              _hint('You will spectate when a match starts')
+              const _Hint('You will spectate when a match starts')
             else ...[
               _PrimaryButton(
                 label: 'START GAME',
@@ -324,21 +334,31 @@ class _LobbyActions extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               if (playerCount < 2)
-                _hint('Waiting for at least one more pilot…'),
+                const _Hint('Waiting for at least one more pilot…'),
             ],
           ],
         );
       },
     );
   }
+}
 
-  Widget _hint(String text) => Text(
-    text,
-    style: TextStyle(
-      color: Colors.white.withValues(alpha: 0.45),
-      fontSize: 12,
-    ),
-  );
+/// A small dimmed hint line under the lobby actions.
+class _Hint extends StatelessWidget {
+  const _Hint(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: TextStyle(
+        color: Colors.white.withValues(alpha: 0.45),
+        fontSize: 12,
+      ),
+    );
+  }
 }
 
 /// A two-option Play / Spectate switch.
@@ -359,14 +379,36 @@ class _ModeToggle extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _segment('Play', !spectating, () => onChanged(false)),
-          _segment('Spectate', spectating, () => onChanged(true)),
+          _Segment(
+            label: 'Play',
+            selected: !spectating,
+            onTap: () => onChanged(false),
+          ),
+          _Segment(
+            label: 'Spectate',
+            selected: spectating,
+            onTap: () => onChanged(true),
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _segment(String label, bool selected, VoidCallback onTap) {
+/// One option of the Play / Spectate switch.
+class _Segment extends StatelessWidget {
+  const _Segment({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(

@@ -24,7 +24,7 @@ class Taunts {
     'Yoinked your planet!',
     'Houston, you have a problem',
     'Resistance is futile',
-    'Did you even unplug the mouse?',
+    'Did you unplug the mouse?',
     'I learned this from a tutorial',
     'Stay in orbit, rookie',
     'Pew pew, get good',
