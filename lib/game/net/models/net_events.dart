@@ -40,7 +40,6 @@ abstract class ShipState with _$ShipState {
     required double velocityX,
     required double velocityY,
     @Default(true) bool alive,
-    @Default(false) bool braking, // brakes held — braces against ship bounces
   }) = _ShipState;
 
   factory ShipState.fromJson(Map<String, dynamic> json) =>

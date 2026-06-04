@@ -74,12 +74,6 @@ class SpaceGame extends FlameGame
         DragCallbacks {
   static final Vector2 worldSize = Vector2(4200, 3000);
   static const captureSeconds = 5.0;
-
-  // Ship-to-ship bounce: ignore gentle touches (below this closing speed), and
-  // the impulse the bounced ship is pushed away with.
-  static const _shipBounceMinSpeed = 90.0;
-  static const _shipBounceImpulse = 420.0;
-
   static const overlayName = 'name';
   static const overlayLobby = 'lobby';
   static const overlayHud = 'hud';
@@ -665,7 +659,6 @@ class SpaceGame extends FlameGame
       facing: state.angle,
       velocity: Vector2(state.velocityX, state.velocityY),
       alive: state.alive,
-      braking: state.braking,
     );
   }
 
@@ -767,7 +760,6 @@ class SpaceGame extends FlameGame
         velocityX: ship.velocity.x,
         velocityY: ship.velocity.y,
         alive: ship.alive,
-        braking: ship.braking,
       ),
     );
   }
@@ -825,12 +817,11 @@ class SpaceGame extends FlameGame
       }
     }
 
-    // Only an actual player simulates captures, powerups, damage and bounces.
+    // Only an actual player simulates captures, powerups and damage.
     if (playing) {
       _updateCapture(deltaTime);
       _updatePowerups(deltaTime);
       _resolveHits();
-      _resolveShipCollisions();
     }
 
     _scoreTimer -= deltaTime;
@@ -1049,7 +1040,6 @@ class SpaceGame extends FlameGame
             localShip!.applyKnockback(
               atan2(bullet.velocity.y, bullet.velocity.x),
             );
-            SoundService.instance.playSoundEffect(SoundEffect.hit);
           }
           break;
         }
@@ -1057,48 +1047,6 @@ class SpaceGame extends FlameGame
     }
   }
 
-  /// Bounces the local ship off another ship on a real collision (closing
-  /// speed above [_shipBounceMinSpeed], not a gentle touch). The ship being run
-  /// into bounces away — but if it is braking (bracing), the ship running into
-  /// it bounces instead. Resolved per-client for the local ship, so each side
-  /// decides its own bounce consistently from the shared state.
-  void _resolveShipCollisions() {
-    final localShip = _ships[player.id] as LocalShip?;
-    if (localShip == null || !localShip.alive) {
-      return;
-    }
-    for (final other in _ships.values) {
-      if (other.id == player.id || !other.alive) {
-        continue;
-      }
-      final dx = localShip.position.x - other.position.x;
-      final dy = localShip.position.y - other.position.y;
-      final distanceSquared = dx * dx + dy * dy;
-      final minDistance = localShip.radius + other.radius;
-      if (distanceSquared == 0 ||
-          distanceSquared > minDistance * minDistance) {
-        continue;
-      }
-      final distance = sqrt(distanceSquared);
-      // Unit normal pointing from the other ship toward ours.
-      final nx = dx / distance;
-      final ny = dy / distance;
-      // How fast each ship is moving toward the other along that normal.
-      final localToward =
-          -(localShip.velocity.x * nx + localShip.velocity.y * ny);
-      final otherToward = other.velocity.x * nx + other.velocity.y * ny;
-      if (localToward + otherToward < _shipBounceMinSpeed) {
-        continue; // gentle touch, or already separating
-      }
-      // The "runner" is whoever is moving into the other faster. The ship run
-      // into bounces, unless it is braking — then the runner bounces instead.
-      final localIsRunner = localToward > otherToward;
-      final localBounces = localIsRunner ? other.braking : !localShip.braking;
-      if (localBounces) {
-        localShip.applyKnockback(atan2(ny, nx), _shipBounceImpulse);
-      }
-    }
-  }
 
   void _recomputeScores() {
     final planetCounts = <String, int>{};

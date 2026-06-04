@@ -28,7 +28,6 @@ abstract class ShipComponent extends PositionComponent {
   final Vector2 velocity = Vector2.zero();
   double facing = 0; // radians, positive x axis = 0
   bool thrusting = false;
-  bool braking = false; // brakes held — braces against ship-to-ship bounces
   bool alive = true;
 
   double get radius => 18;
@@ -186,12 +185,9 @@ class LocalShip extends ShipComponent
     return true;
   }
 
-  void applyKnockback(
-    double directionAngle, [
-    double impulse = _knockbackImpulse,
-  ]) {
-    velocity.x += cos(directionAngle) * impulse;
-    velocity.y += sin(directionAngle) * impulse;
+  void applyKnockback(double directionAngle) {
+    velocity.x += cos(directionAngle) * _knockbackImpulse;
+    velocity.y += sin(directionAngle) * _knockbackImpulse;
   }
 
   @override
@@ -214,7 +210,6 @@ class LocalShip extends ShipComponent
     final thrust = _thrustPressed || game.thrustHeld;
     final brake = _brakePressed || game.brakeHeld;
     thrusting = thrust;
-    braking = brake;
     if (thrust) {
       final acceleration = _thrustAcceleration * deltaTime;
       velocity.x += cos(facing) * acceleration;
@@ -307,13 +302,11 @@ class RemoteShip extends ShipComponent {
     required double facing,
     required Vector2 velocity,
     required bool alive,
-    required bool braking,
   }) {
     _target.setFrom(position);
     _targetFacing = facing;
     this.velocity.setFrom(velocity);
     this.alive = alive;
-    this.braking = braking;
     thrusting = velocity.length > 40;
   }
 

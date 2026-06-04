@@ -28,22 +28,14 @@ class SoundEffect {
   /// Played when a powerup is activated (picked up).
   static const powerup = SoundEffect('assets/sounds/powerup.mp3');
 
-  /// Played when your ship is hit; a random variant is used. Quieter (80% of
-  /// the default) since it fires often.
-  static const hit = SoundEffect(
-    'assets/sounds/hit',
-    variantCount: 4,
-    volume: 1.6,
-  );
-
   /// Played when the match ends.
   static const gameOver = SoundEffect('assets/sounds/game_over.mp3');
 
-  static const List<SoundEffect> values = [powerup, hit, gameOver];
+  static const List<SoundEffect> values = [powerup, gameOver];
 }
 
-/// Plays the looping background music and sound effects (powerup pickup, hit)
-/// via flutter_soloud. Adapted from sokobros' SoundService. Honours the
+/// Plays the looping background music and sound effects (powerup pickup, game
+/// over) via flutter_soloud. Adapted from sokobros' SoundService. Honours the
 /// [SettingsService] music/sfx toggles.
 class SoundService {
   SoundService._();
