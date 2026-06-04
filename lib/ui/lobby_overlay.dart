@@ -109,7 +109,13 @@ class _LobbyPanel extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 22),
-                  _LobbyActions(game: game, playerCount: members.length),
+                  _LobbyActions(
+                    game: game,
+                    // Spectators don't count toward the minimum to start.
+                    playerCount: members
+                        .where((member) => !member.spectating)
+                        .length,
+                  ),
                 ],
               );
             },

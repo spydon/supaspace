@@ -31,6 +31,7 @@ class RealtimeClient {
   GamePhase _phase = GamePhase.lobby;
   int? _seed;
   int? _startedAt;
+  bool _spectating = false;
 
   Timer? _reconnectTimer;
   bool _disposed = false;
@@ -137,6 +138,14 @@ class RealtimeClient {
   /// edited their call sign in the lobby), so peers see the new name.
   Future<void> updatePresence() => _track();
 
+  /// Advertise whether this client intends to spectate rather than play (the
+  /// lobby Play/Spectate toggle), so peers can leave spectators out of the
+  /// pilot count needed to start a match.
+  Future<void> setSpectateIntent({required bool spectating}) async {
+    _spectating = spectating;
+    await _track();
+  }
+
   /// Advertise that this client is back in the lobby.
   Future<void> setLobby() async {
     _phase = GamePhase.lobby;
@@ -167,6 +176,7 @@ class RealtimeClient {
     'name': player.name,
     'color': player.colorValue,
     'phase': _phase.name,
+    'spectating': _spectating,
     if (_seed != null) 'seed': _seed,
     if (_startedAt != null) 'startedAt': _startedAt,
   });
@@ -187,6 +197,7 @@ class RealtimeClient {
           phase: GamePhase.fromString(payload['phase'] as String?),
           seed: (payload['seed'] as num?)?.toInt(),
           startedAt: (payload['startedAt'] as num?)?.toInt(),
+          spectating: payload['spectating'] as bool? ?? false,
         );
       }
     }

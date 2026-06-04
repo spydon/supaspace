@@ -17,6 +17,10 @@ abstract class PresenceMember with _$PresenceMember {
     required GamePhase phase,
     int? seed,
     int? startedAt,
+    // Whether this member has chosen to spectate rather than play. In the
+    // lobby this is the Play/Spectate toggle; it is what excludes them from the
+    // count of pilots needed to start a match.
+    @Default(false) bool spectating,
   }) = _PresenceMember;
 
   const PresenceMember._();

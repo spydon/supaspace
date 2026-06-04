@@ -356,8 +356,13 @@ class SpaceGame extends FlameGame
 
   // --- lobby / lifecycle ----------------------------------------------------
 
+  /// Pilots in the lobby who intend to play (spectators excluded). This is what
+  /// the minimum-to-start check counts.
+  int get playablePilotCount =>
+      roster.value.where((member) => !member.spectating).length;
+
   bool get canStart =>
-      roster.value.length >= 2 && !isLiveGameRunning && !spectateIntent.value;
+      playablePilotCount >= 2 && !isLiveGameRunning && !spectateIntent.value;
 
   /// A match this client missed the start of, advertised by a playing peer.
   PresenceMember? get liveGameHost {
@@ -386,6 +391,8 @@ class SpaceGame extends FlameGame
 
   void toggleSpectateIntent() {
     spectateIntent.value = !spectateIntent.value;
+    // Advertise the choice so peers exclude us from the start count.
+    net.setSpectateIntent(spectating: spectateIntent.value);
   }
 
   /// Triggered by the lobby Start button. Picks a shared seed + start time,
