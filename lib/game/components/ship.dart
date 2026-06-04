@@ -335,8 +335,9 @@ class LocalShip extends ShipComponent
   }
 }
 
-/// A ship owned by another client. Snaps to broadcast states and extrapolates
-/// using the last known velocity between updates for smooth motion.
+/// A ship owned by another client. Extrapolates from the last broadcast using
+/// its velocity, and eases toward each new state — gliding (speed-capped) to a
+/// correction that lands far from the prediction rather than snapping there.
 class RemoteShip extends ShipComponent {
   RemoteShip({
     required super.id,
@@ -344,6 +345,12 @@ class RemoteShip extends ShipComponent {
     required super.color,
     required super.position,
   });
+
+  /// How fast (px/s) the ship is allowed to glide toward a correction. The
+  /// dead-reckoning below keeps pace with a moving ship on its own, so this
+  /// only bounds error-correction: a state that lands far from our prediction
+  /// slides over at this speed instead of snapping there in a single frame.
+  static const _maxCorrectionSpeed = 800.0;
 
   final Vector2 _target = Vector2.zero();
   double _targetFacing = 0;
@@ -366,9 +373,25 @@ class RemoteShip extends ShipComponent {
   @override
   void update(double deltaTime) {
     super.update(deltaTime);
-    // extrapolate, then ease toward the latest target
+    // Dead-reckon the target forward and move with the same velocity, so we
+    // keep pace with a ship in motion without any correction needed.
     _target.addScaled(velocity, deltaTime);
-    position.lerp(_target, min(1, deltaTime * 12));
+    position.addScaled(velocity, deltaTime);
+
+    // Close whatever gap remains — normally tiny, but large when a state lands
+    // far from where we predicted. Ease proportionally for small gaps (smooth
+    // settle) but cap the per-frame step by speed, so a big discrepancy glides
+    // over instead of snapping there.
+    final deltaX = _target.x - position.x;
+    final deltaY = _target.y - position.y;
+    final distance = sqrt(deltaX * deltaX + deltaY * deltaY);
+    if (distance > 0.01) {
+      final ease = min(1, deltaTime * 12);
+      final step = min(distance * ease, _maxCorrectionSpeed * deltaTime);
+      position.x += deltaX / distance * step;
+      position.y += deltaY / distance * step;
+    }
+
     facing = _interpolateAngle(facing, _targetFacing, min(1, deltaTime * 12));
   }
 }
