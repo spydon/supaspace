@@ -51,10 +51,18 @@ class ScoreEntry {
 /// countdown ended. [leaders] holds every player sharing the top count, so a
 /// tie can be shown instead of crowning an arbitrary winner.
 class MatchOutcome {
-  MatchOutcome({required this.leaders, required this.topPlanets});
+  MatchOutcome({
+    required this.leaders,
+    required this.topPlanets,
+    required this.standings,
+  });
 
   final List<ScoreEntry> leaders;
   final int topPlanets;
+
+  /// Final standings snapshotted when the match ended, so the results screen
+  /// keeps showing everyone who took part even after they leave to the lobby.
+  final List<ScoreEntry> standings;
 
   /// Whether anyone actually captured a planet.
   bool get hasCaptures => topPlanets > 0;
@@ -584,7 +592,13 @@ class SpaceGame extends FlameGame
     final leaders = playerEntries
         .where((entry) => entry.planets == topPlanets)
         .toList();
-    final matchOutcome = MatchOutcome(leaders: leaders, topPlanets: topPlanets);
+    final matchOutcome = MatchOutcome(
+      leaders: leaders,
+      topPlanets: topPlanets,
+      // Snapshot the standings now so the results screen keeps everyone who
+      // took part, even as they leave back to the lobby.
+      standings: List.of(scores.value),
+    );
     outcome.value = matchOutcome;
     unawaited(_reportWinner(matchOutcome));
     SoundService.instance.playSoundEffect(SoundEffect.gameOver);

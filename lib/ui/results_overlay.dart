@@ -89,49 +89,48 @@ class _ResultsOverlayState extends State<ResultsOverlay>
                     const SizedBox(height: 14),
                     _OutcomeHeadline(outcome: outcome),
                     const SizedBox(height: 22),
-                    ValueListenableBuilder<List<ScoreEntry>>(
-                      valueListenable: game.scores,
-                      builder: (context, entries, _) => Column(
-                        children: entries
-                            .map(
-                              (entry) => Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 3,
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Container(
-                                      width: 10,
-                                      height: 10,
-                                      decoration: BoxDecoration(
-                                        color: entry.color,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      entry.name,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Text(
-                                      '${entry.planets}',
-                                      style: TextStyle(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.8,
-                                        ),
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                    // Frozen final standings (see MatchOutcome.standings), so
+                    // pilots stay listed even after they head to the lobby.
+                    Column(
+                      children: (outcome?.standings ?? const <ScoreEntry>[])
+                          .map(
+                            (entry) => Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 3,
                               ),
-                            )
-                            .toList(),
-                      ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 10,
+                                    height: 10,
+                                    decoration: BoxDecoration(
+                                      color: entry.color,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    entry.name,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    '${entry.planets}',
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.8,
+                                      ),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                          .toList(),
                     ),
                     const SizedBox(height: 26),
                     TextButton(
