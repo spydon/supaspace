@@ -1,14 +1,19 @@
 name: Web release build
 
-# Builds a wasm-enabled web release on every push to main (and on demand).
-# The Supabase publishable key is never committed; it is injected here from the
-# SUPABASE_ANON_KEY repository secret. If the secret is unset the build still
-# compiles (the key is simply empty at runtime).
+# Builds a wasm-enabled web release on every push to main (and on demand), then
+# publishes the build output to the root of the `web` branch (which Cloudflare
+# Pages serves). The Supabase publishable key is never committed; it is injected
+# here from the SUPABASE_ANON_KEY repository secret. If the secret is unset the
+# build still compiles (the key is simply empty at runtime).
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+# Needed for the publish step to push to the web branch.
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -33,8 +38,10 @@ jobs:
           flutter build web --release --wasm
           --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - name: Publish build to web branch (at root)
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          name: web-release
-          path: build/web
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/web
+          publish_branch: web
+          force_orphan: true
