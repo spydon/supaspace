@@ -7,10 +7,10 @@
 ///
 ///   flutter build web --wasm --dart-define=SUPABASE_ANON_KEY=`<publishable>`
 ///
-/// On Cloudflare Pages the value comes from the `SUPABASE_ANON_KEY` environment
-/// variable / secret — wire it into the build command's `--dart-define`. Use
-/// only the publishable/anon key here (it respects Row Level Security); never a
-/// secret/service key.
+/// In CI the value comes from the `SUPABASE_ANON_KEY` GitHub Actions secret,
+/// baked into the bundle the workflow publishes (and that Cloudflare serves).
+/// Use only the publishable/anon key here (it respects Row Level Security);
+/// never a secret/service key.
 const supabaseUrl = 'https://lrnasmsbyyxyfpjuquzw.supabase.co';
 
 // ignore: do_not_use_environment

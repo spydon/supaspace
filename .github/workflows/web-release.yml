@@ -1,11 +1,13 @@
 name: Web release build
 
 # Builds a wasm-enabled web release on every push to main (and on demand), then
-# publishes the build output to the root of the `web` branch.
+# publishes the build output to the root of the `web` branch (which Cloudflare
+# Pages serves as static files).
 #
-# The Supabase publishable key is not injected here — it is configured on
-# Cloudflare (as the SUPABASE_ANON_KEY environment variable, passed to the build
-# command's --dart-define when Cloudflare builds the app).
+# The Supabase publishable key is never committed; it is injected here at build
+# time from the SUPABASE_ANON_KEY repository secret. It is the publishable
+# (anon) key — safe to ship in the client and protected by RLS. If the secret is
+# unset the build still compiles (the key is simply empty at runtime).
 
 on:
   push:
@@ -35,7 +37,9 @@ jobs:
         run: dart run build_runner build
 
       - name: Build web (wasm, release)
-        run: flutter build web --release --wasm
+        run: >-
+          flutter build web --release --wasm
+          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
       - name: Publish build to web branch (at root)
         uses: peaceiris/actions-gh-pages@v4

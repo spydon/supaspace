@@ -133,11 +133,10 @@ supabase/migrations/        high_scores table, award_win() function, RLS
 
 1. **Configure Supabase.** The project URL lives in `lib/supabase_config.dart`.
    The **publishable** (anon) key is *not* committed — it's injected at build
-   time from the `SUPABASE_ANON_KEY` Dart define (see [Running](#running)). In
-   production the build is done by Cloudflare, which supplies the key from its
-   `SUPABASE_ANON_KEY` environment variable via the build command's
-   `--dart-define`. Use only the publishable key (it respects RLS) — never a
-   secret/service key.
+   time from the `SUPABASE_ANON_KEY` Dart define (see [Running](#running)). The
+   CI build (and the deployed bundle Cloudflare serves) gets it from the
+   `SUPABASE_ANON_KEY` GitHub Actions secret. Use only the publishable key (it
+   respects RLS) — never a secret/service key.
 2. **Apply the migrations** in `supabase/migrations/` (SQL Editor, Supabase
    CLI, or MCP): `0001_high_scores.sql` creates the leaderboard table and its
    RLS policies, and `0002_match_winner_votes.sql` adds the consensus
