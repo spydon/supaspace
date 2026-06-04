@@ -1,12 +1,14 @@
 import 'dart:math';
 
+import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:supaspace/game/space_game.dart';
 
 /// A projectile, drawn as an animated green flame. Spawned on every client from
 /// a `shot` broadcast (or locally when firing) and simulated identically: it
-/// travels along [velocity] until [lifespan] elapses. Hit resolution happens in
-/// the game loop (victim-authoritative), not here.
+/// travels along [velocity] until [lifespan] elapses. It carries a *passive*
+/// hitbox; the hit (and victim knockback) is resolved by the active local-ship
+/// hitbox, not here.
 ///
 /// If [homing], it gently curves toward the nearest enemy ship once one is
 /// close (the "homing shots" powerup). The flame sprite points "down" (+Y) in
@@ -37,11 +39,19 @@ class Bullet extends SpriteAnimationComponent with HasGameReference<SpaceGame> {
   final bool homing;
   final double lifespan;
 
-  /// Collision radius used by the game loop's hit detection. Kept smaller than
-  /// the visual flame so grazing the outer glow does not count as a hit.
+  /// Collision radius — kept smaller than the visual flame so grazing the outer
+  /// glow does not count as a hit.
   double radius = 6;
 
   double _age = 0;
+
+  @override
+  Future<void> onLoad() async {
+    add(
+      CircleHitbox(radius: radius, position: size / 2, anchor: Anchor.center)
+        ..collisionType = CollisionType.passive,
+    );
+  }
 
   @override
   void update(double deltaTime) {

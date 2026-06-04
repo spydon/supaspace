@@ -69,6 +69,7 @@ class MatchOutcome {
 class SpaceGame extends FlameGame
     with
         HasKeyboardHandlerComponents,
+        HasCollisionDetection,
         PointerMoveCallbacks,
         TapCallbacks,
         DragCallbacks {
@@ -175,8 +176,8 @@ class SpaceGame extends FlameGame
     camera.viewfinder.position = worldSize / 2;
     camera.backdrop = Starfield();
 
-    // Maintain a cached query of bullets so hit resolution doesn't scan every
-    // world child each frame.
+    // Cached bullet query, used to clear bullets between matches without
+    // scanning every world child.
     world.children.register<Bullet>();
 
     final flameImage = await images.load('green_flame_bullet.png');
@@ -820,11 +821,11 @@ class SpaceGame extends FlameGame
       }
     }
 
-    // Only an actual player simulates captures, powerups and damage.
+    // Only an actual player simulates captures and powerups. Bullet hits are
+    // handled by the local ship's collision callback (victim-authoritative).
     if (playing) {
       _updateCapture(deltaTime);
       _updatePowerups(deltaTime);
-      _resolveHits();
     }
 
     _scoreTimer -= deltaTime;
@@ -1023,32 +1024,6 @@ class SpaceGame extends FlameGame
       }
     }
     return nearest;
-  }
-
-  void _resolveHits() {
-    final localShip = _ships[player.id] as LocalShip?;
-    // query<Bullet>() is the registered, cached bullet set (no per-frame scan
-    // of all world children). Removals are deferred to the tick's end, so
-    // removing a bullet while iterating is safe.
-    for (final bullet in world.children.query<Bullet>()) {
-      for (final ship in _ships.values) {
-        if (ship.id == bullet.ownerId || !ship.alive) {
-          continue;
-        }
-        final reach = ship.radius + bullet.radius;
-        if (bullet.position.distanceToSquared(ship.position) <=
-            reach * reach) {
-          bullet.removeFromParent();
-          // Victim-authoritative: only apply knockback to our own ship.
-          if (ship == localShip && bullet.ownerId != player.id) {
-            localShip!.applyKnockback(
-              atan2(bullet.velocity.y, bullet.velocity.x),
-            );
-          }
-          break;
-        }
-      }
-    }
   }
 
 

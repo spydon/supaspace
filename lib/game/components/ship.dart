@@ -1,8 +1,10 @@
 import 'dart:math';
 
+import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supaspace/game/components/bullet.dart';
 import 'package:supaspace/game/powerup_type.dart';
 import 'package:supaspace/game/space_game.dart';
 
@@ -115,8 +117,13 @@ abstract class ShipComponent extends PositionComponent {
 
 /// The ship this client controls: reads input, runs physics, fires, and
 /// broadcasts its authoritative state around 20 times a second.
+///
+/// It carries the only *active* [CircleHitbox]; bullets are passive. Collision
+/// detection is therefore reduced to "the local ship vs every bullet", and hit
+/// resolution stays victim-authoritative — this ship reacts to being hit, in
+/// [onCollisionStart], on its own client only.
 class LocalShip extends ShipComponent
-    with KeyboardHandler, HasGameReference<SpaceGame> {
+    with KeyboardHandler, HasGameReference<SpaceGame>, CollisionCallbacks {
   LocalShip({
     required super.id,
     required super.shipName,
@@ -177,6 +184,31 @@ class LocalShip extends ShipComponent
         _shotgunEnabled = true;
       case PowerupType.homing:
         _homingEnabled = true;
+    }
+  }
+
+  @override
+  Future<void> onLoad() async {
+    await super.onLoad();
+    // The only active hitbox in the game; bullets are passive, so the engine
+    // only ever tests this ship against bullets.
+    add(
+      CircleHitbox(radius: radius, position: size / 2, anchor: Anchor.center)
+        ..collisionType = CollisionType.active,
+    );
+  }
+
+  @override
+  void onCollisionStart(
+    Set<Vector2> intersectionPoints,
+    PositionComponent other,
+  ) {
+    super.onCollisionStart(intersectionPoints, other);
+    // Victim-authoritative: get knocked back by an incoming bullet that isn't
+    // ours, and consume it on this client.
+    if (other is Bullet && other.ownerId != id) {
+      applyKnockback(atan2(other.velocity.y, other.velocity.x));
+      other.removeFromParent();
     }
   }
 
