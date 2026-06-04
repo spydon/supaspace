@@ -23,11 +23,17 @@ alter table public.match_winner_votes enable row level security;
 -- No RLS policies: clients cannot touch this table directly. All access is
 -- through report_winner(), which runs as the definer.
 
-create or replace function public.report_winner(
-  match_id bigint,
-  winner_id uuid,
-  winner_name text,
-  participant_count integer
+-- Parameters are prefixed (p_) so they never collide with the column names
+-- below; an unprefixed name in the queries would be ambiguous between the
+-- column and the parameter and error at runtime. Replacing requires a drop
+-- because the parameter names change.
+drop function if exists public.report_winner(bigint, uuid, text, integer);
+
+create function public.report_winner(
+  p_match_id bigint,
+  p_winner_id uuid,
+  p_winner_name text,
+  p_participant_count integer
 )
 returns void
 language plpgsql
@@ -46,12 +52,12 @@ begin
   end if;
 
   -- Record (or replace) this client's vote for the match.
-  insert into public.match_winner_votes as v (
+  insert into public.match_winner_votes (
     match_id, voter_id, winner_id, winner_name, participant_count
   )
   values (
-    report_winner.match_id, voter, report_winner.winner_id,
-    report_winner.winner_name, greatest(report_winner.participant_count, 1)
+    p_match_id, voter, p_winner_id,
+    p_winner_name, greatest(p_participant_count, 1)
   )
   on conflict (match_id, voter_id) do update
     set winner_id         = excluded.winner_id,
@@ -60,22 +66,19 @@ begin
         created_at        = now();
 
   -- The most-voted winner for this match, with the name reported for them.
-  select v.winner_id, v.name, v.n
+  select winner_id, max(winner_name), count(*)
     into top_winner_id, top_winner_name, top_votes
-  from (
-    select winner_id, max(winner_name) as name, count(*) as n
-    from public.match_winner_votes
-    where match_id = report_winner.match_id
-    group by winner_id
-    order by n desc
-    limit 1
-  ) v;
+  from public.match_winner_votes
+  where match_id = p_match_id
+  group by winner_id
+  order by count(*) desc
+  limit 1;
 
   -- Use the largest reported participant count, so a stray low count can't
   -- lower the bar for a majority.
   select max(participant_count) into total_participants
   from public.match_winner_votes
-  where match_id = report_winner.match_id;
+  where match_id = p_match_id;
 
   -- Award the winner a point once strictly more than half of the participants
   -- agree. The 5-minute cap (and the fact that votes arrive within seconds)

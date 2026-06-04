@@ -335,8 +335,9 @@ class SpaceGame extends FlameGame
           winnerName: outcome.winner.name,
           participantCount: _ships.length,
         );
-      } on Object catch (_) {
-        // Ignore report failures (offline, no consensus, rate-limited, etc.).
+      } on Object catch (error) {
+        // Non-fatal (offline, etc.), but log it so a broken RPC is visible.
+        debugPrint('reportWinner failed: $error');
       }
     }
     await _refreshHighScores();
