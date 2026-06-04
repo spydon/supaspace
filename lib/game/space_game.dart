@@ -513,6 +513,10 @@ class SpaceGame extends FlameGame
 
   void _endMatch() {
     phase.value = GamePhase.results;
+    // Stop advertising this match in presence (results is a local-only phase),
+    // so peers no longer see it as an ongoing game to spectate while we sit on
+    // the game-over screen.
+    net.setLobby();
     // The HUD (with its touch controls) is removed below, so clear any held
     // state rather than leaving it stuck on.
     thrustHeld = false;
