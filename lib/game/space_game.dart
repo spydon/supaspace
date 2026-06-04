@@ -655,9 +655,11 @@ class SpaceGame extends FlameGame
       _ensureSpectatorFollow();
     }
     ship.applyState(
-      position: Vector2(state.positionX, state.positionY),
+      positionX: state.positionX,
+      positionY: state.positionY,
       facing: state.angle,
-      velocity: Vector2(state.velocityX, state.velocityY),
+      velocityX: state.velocityX,
+      velocityY: state.velocityY,
       alive: state.alive,
     );
   }
@@ -839,7 +841,8 @@ class SpaceGame extends FlameGame
 
     PlanetComponent? hoveredPlanet;
     for (final planet in _planets) {
-      if (planet.center.distanceTo(ship.position) <= planet.radius) {
+      final radius = planet.radius;
+      if (planet.center.distanceToSquared(ship.position) <= radius * radius) {
         hoveredPlanet = planet;
         break;
       }
@@ -902,12 +905,13 @@ class SpaceGame extends FlameGame
     }
 
     PowerupComponent? hoveredPowerup;
+    final shipRadius = ship.radius;
     for (final powerup in _powerups) {
       if (powerup.collected) {
         continue;
       }
-      if (powerup.position.distanceTo(ship.position) <=
-          powerup.radius + ship.radius) {
+      final reach = powerup.radius + shipRadius;
+      if (powerup.position.distanceToSquared(ship.position) <= reach * reach) {
         hoveredPowerup = powerup;
         break;
       }
@@ -1032,8 +1036,9 @@ class SpaceGame extends FlameGame
         if (ship.id == bullet.ownerId || !ship.alive) {
           continue;
         }
-        if (bullet.position.distanceTo(ship.position) <=
-            ship.radius + bullet.radius) {
+        final reach = ship.radius + bullet.radius;
+        if (bullet.position.distanceToSquared(ship.position) <=
+            reach * reach) {
           bullet.removeFromParent();
           // Victim-authoritative: only apply knockback to our own ship.
           if (ship == localShip && bullet.ownerId != player.id) {

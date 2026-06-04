@@ -40,8 +40,10 @@ class PlanetComponent extends PositionComponent {
     0.25,
   ).toColor();
 
-  // Reused across frames instead of allocating in [render]. Shaders and the
-  // dynamic colour/width are reassigned each frame; the Paints are not.
+  // Reused across frames instead of allocating in [render]. The body/glow/rim
+  // appearance only changes while ownership is fading, so their shaders/colours
+  // are rebuilt only then (see [_renderedBlend]) — a static planet just issues
+  // the draw calls. Geometry is fixed per planet, so the rects are cached too.
   final Paint _glowPaint = Paint();
   final Paint _bodyPaint = Paint();
   final Paint _rimPaint = Paint()..style = PaintingStyle.stroke;
@@ -53,6 +55,22 @@ class PlanetComponent extends PositionComponent {
     ..style = PaintingStyle.stroke
     ..strokeCap = StrokeCap.round
     ..strokeWidth = 5;
+
+  late final Offset _center = Offset(radius, radius);
+  late final Rect _bodyRect = Rect.fromCircle(center: _center, radius: radius);
+  late final Rect _glowRect = Rect.fromCircle(
+    center: _center,
+    radius: radius * 1.7,
+  );
+  late final Rect _captureRingRect = Rect.fromCircle(
+    center: _center,
+    radius: radius + 12,
+  );
+
+  // The (blend, tint) the body/glow/rim paints were last built for, so they are
+  // rebuilt only when ownership actually changes.
+  double _renderedBlend = -1;
+  Color? _renderedTint;
 
   /// Seconds for ownership to fully fade in, out, or shift to a new owner.
   static const _fadeDuration = 0.6;
@@ -87,24 +105,60 @@ class PlanetComponent extends PositionComponent {
 
   @override
   void render(Canvas canvas) {
-    final center = Offset(radius, radius);
+    // Rebuild the ownership-tinted paints only when the fade state changed.
+    if (_ownershipBlend != _renderedBlend || _tintColor != _renderedTint) {
+      _rebuildOwnershipPaints();
+      _renderedBlend = _ownershipBlend;
+      _renderedTint = _tintColor;
+    }
+
+    // Owner halo / atmosphere glow, fading in with ownership.
+    if (_tintColor != null && _ownershipBlend > 0) {
+      canvas.drawCircle(_center, radius * 1.7, _glowPaint);
+    }
+    // Shaded sphere body, then the rim light.
+    canvas.drawCircle(_center, radius, _bodyPaint);
+    canvas.drawCircle(_center, radius, _rimPaint);
+
+    // Capture progress ring (local player hovering) — only while capturing.
+    if (captureProgress > 0) {
+      // faint track
+      canvas.drawArc(_captureRingRect, 0, 2 * pi, false, _trackPaint);
+      // progress sweep. Rotate the sweep so its colours start where the arc
+      // starts (top, -pi/2) instead of the gradient's default 0 (3 o'clock),
+      // so the fade follows the progress arc.
+      _sweepPaint.shader = const SweepGradient(
+        colors: [Color(0xFF66E0FF), Color(0xFFB388FF)],
+        transform: GradientRotation(-pi / 2),
+      ).createShader(_captureRingRect);
+      canvas.drawArc(
+        _captureRingRect,
+        -pi / 2,
+        2 * pi * captureProgress.clamp(0, 1),
+        false,
+        _sweepPaint,
+      );
+    }
+  }
+
+  /// Rebuilds the glow/body/rim paints for the current ownership fade. Called
+  /// from [render] only when the fade state changes, so a static planet does no
+  /// gradient/shader work per frame.
+  void _rebuildOwnershipPaints() {
     final tint = _tintColor;
     final blend = _ownershipBlend;
 
-    // Owner halo / atmosphere glow, fading in with ownership.
     if (tint != null && blend > 0) {
       _glowPaint.shader = RadialGradient(
         colors: [
           tint.withValues(alpha: 0.45 * blend),
           tint.withValues(alpha: 0.0),
         ],
-      ).createShader(Rect.fromCircle(center: center, radius: radius * 1.7));
-      canvas.drawCircle(center, radius * 1.7, _glowPaint);
+      ).createShader(_glowRect);
     }
 
-    // Planet body: shaded sphere. As ownership fades in, the sphere — both its
-    // lit and dark sides — tints ever more strongly toward the owner's colour,
-    // so the whole planet gradually reads as captured.
+    // As ownership fades in, both the lit and dark sides tint ever more
+    // strongly toward the owner's colour, so the whole planet reads as taken.
     final litColor = Color.lerp(_baseColor, tint ?? _baseColor, 0.7 * blend)!;
     final darkColor = Color.lerp(
       _baseDarkColor,
@@ -114,10 +168,8 @@ class PlanetComponent extends PositionComponent {
     _bodyPaint.shader = RadialGradient(
       center: const Alignment(-0.4, -0.4),
       colors: [litColor, darkColor],
-    ).createShader(Rect.fromCircle(center: center, radius: radius));
-    canvas.drawCircle(center, radius, _bodyPaint);
+    ).createShader(_bodyRect);
 
-    // Rim light: brightens and thickens into the owner's colour as it fades in.
     _rimPaint
       ..strokeWidth = 2 + 1.5 * blend
       ..color = Color.lerp(
@@ -125,30 +177,5 @@ class PlanetComponent extends PositionComponent {
         tint ?? _baseColor,
         blend,
       )!;
-    canvas.drawCircle(center, radius, _rimPaint);
-
-    // Capture progress ring (local player hovering).
-    if (captureProgress > 0) {
-      final ringRectangle = Rect.fromCircle(
-        center: center,
-        radius: radius + 12,
-      );
-      // faint track
-      canvas.drawArc(ringRectangle, 0, 2 * pi, false, _trackPaint);
-      // progress sweep. Rotate the sweep so its colours start where the arc
-      // starts (top, -pi/2) instead of the gradient's default 0 (3 o'clock),
-      // so the fade follows the progress arc.
-      _sweepPaint.shader = const SweepGradient(
-        colors: [Color(0xFF66E0FF), Color(0xFFB388FF)],
-        transform: GradientRotation(-pi / 2),
-      ).createShader(ringRectangle);
-      canvas.drawArc(
-        ringRectangle,
-        -pi / 2,
-        2 * pi * captureProgress.clamp(0, 1),
-        false,
-        _sweepPaint,
-      );
-    }
   }
 }

@@ -298,14 +298,16 @@ class RemoteShip extends ShipComponent {
   double _targetFacing = 0;
 
   void applyState({
-    required Vector2 position,
+    required double positionX,
+    required double positionY,
     required double facing,
-    required Vector2 velocity,
+    required double velocityX,
+    required double velocityY,
     required bool alive,
   }) {
-    _target.setFrom(position);
+    _target.setValues(positionX, positionY);
     _targetFacing = facing;
-    this.velocity.setFrom(velocity);
+    velocity.setValues(velocityX, velocityY);
     this.alive = alive;
     thrusting = velocity.length > 40;
   }
