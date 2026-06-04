@@ -301,15 +301,31 @@ class _LobbyActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (game.isLiveGameRunning) {
+      final canJoin = game.canJoinLiveGame;
+      final playing = game.liveGamePlayerCount;
       return Column(
         children: [
+          if (canJoin) ...[
+            _PrimaryButton(
+              label: 'JOIN GAME',
+              enabled: true,
+              onPressed: game.joinLiveGame,
+            ),
+            const SizedBox(height: 8),
+          ],
           _PrimaryButton(
             label: 'SPECTATE LIVE GAME',
             enabled: true,
             onPressed: game.spectateLiveGame,
           ),
           const SizedBox(height: 8),
-          const _Hint('A match is already in progress'),
+          _Hint(
+            canJoin
+                ? 'A match is in progress ($playing/${SpaceGame.maxPlayers}) — '
+                      'jump in or watch'
+                : 'Match is full (${SpaceGame.maxPlayers}/'
+                      '${SpaceGame.maxPlayers}) — spectating only',
+          ),
         ],
       );
     }

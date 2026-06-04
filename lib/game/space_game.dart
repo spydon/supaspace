@@ -371,6 +371,19 @@ class SpaceGame extends FlameGame
 
   bool get isLiveGameRunning => liveGameHost != null;
 
+  /// The most pilots allowed in one match. A late arrival can still jump into
+  /// an in-progress match while it has room; once full they can only spectate.
+  static const maxPlayers = 10;
+
+  /// How many pilots are currently playing the live match (no spectators).
+  int get liveGamePlayerCount =>
+      roster.value.where((member) => member.isPlaying).length;
+
+  /// Whether this client may join the running match as a player (a live game
+  /// exists and it isn't full yet).
+  bool get canJoinLiveGame =>
+      isLiveGameRunning && liveGamePlayerCount < maxPlayers;
+
   void toggleSpectateIntent() {
     spectateIntent.value = !spectateIntent.value;
   }
@@ -395,6 +408,19 @@ class SpaceGame extends FlameGame
       return;
     }
     _enterMatch(host.seed!, host.startedAt!, asSpectator: true);
+  }
+
+  /// Jump into an already-running match as a player (late arrival) while it
+  /// still has room, using the seed/start time advertised by a playing peer.
+  /// The countdown is wall-clock based, so the joiner gets the time remaining.
+  void joinLiveGame() {
+    final host = liveGameHost;
+    if (host == null ||
+        phase.value != GamePhase.lobby ||
+        liveGamePlayerCount >= maxPlayers) {
+      return;
+    }
+    _enterMatch(host.seed!, host.startedAt!, asSpectator: false);
   }
 
   void _enterMatch(int seed, int startedAt, {required bool asSpectator}) {
