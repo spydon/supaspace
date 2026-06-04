@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:supaspace/game/net/high_score_service.dart';
-import 'package:supaspace/game/net/realtime_client.dart';
+import 'package:supaspace/game/net/models/models.dart';
 import 'package:supaspace/game/space_game.dart';
 import 'package:supaspace/ui/settings_dialog.dart';
 

@@ -17,7 +17,7 @@ import 'package:supaspace/game/components/taunt_bubble.dart';
 import 'package:supaspace/game/countdown.dart';
 import 'package:supaspace/game/game_phase.dart';
 import 'package:supaspace/game/net/high_score_service.dart';
-import 'package:supaspace/game/net/net_events.dart';
+import 'package:supaspace/game/net/models/models.dart';
 import 'package:supaspace/game/net/realtime_client.dart';
 import 'package:supaspace/game/planet_field.dart';
 import 'package:supaspace/game/player.dart';

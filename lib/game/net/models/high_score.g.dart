@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'high_score_service.dart';
+part of 'high_score.dart';
 
 // **************************************************************************
 // JsonSerializableGenerator

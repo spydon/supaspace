@@ -18,7 +18,8 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description"
+    content="A real-time multiplayer space game built with Flame and Supabase.">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -31,16 +32,55 @@
 
   <title>Supaspace</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    body { margin: 0; background-color: #05060F; }
+
+    /* Loader shown while the app downloads and boots, removed once Flutter
+       renders its first frame (the in-game loader then takes over). */
+    #loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+      background-color: #05060F;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        sans-serif;
+    }
+    #loading .title {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: 6px;
+      color: #66E0FF;
+    }
+    #loading .spinner {
+      width: 46px;
+      height: 46px;
+      border: 4px solid rgba(102, 224, 255, 0.2);
+      border-top-color: #66E0FF;
+      border-radius: 50%;
+      animation: supaspace-spin 0.9s linear infinite;
+    }
+    @keyframes supaspace-spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
+  <div id="loading">
+    <div class="title">SUPASPACE</div>
+    <div class="spinner"></div>
+  </div>
+  <script>
+    // Flutter fires this once the first frame is painted; hand off to the
+    // in-app loader.
+    window.addEventListener('flutter-first-frame', function () {
+      var loader = document.getElementById('loading');
+      if (loader) loader.remove();
+    });
+  </script>
 
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
   <!-- flutter_soloud web runtime (background music / sound effects). -->
   <script src="assets/packages/flutter_soloud/web/libflutter_soloud_plugin.js" defer></script>
   <script src="assets/packages/flutter_soloud/web/init_module.dart.js" defer></script>

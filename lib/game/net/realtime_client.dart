@@ -2,33 +2,8 @@ import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:supaspace/game/game_phase.dart';
-import 'package:supaspace/game/net/net_events.dart';
+import 'package:supaspace/game/net/models/models.dart';
 import 'package:supaspace/game/player.dart';
-
-/// A player seen in presence (lobby roster / live participants).
-///
-/// Players who are mid-match advertise the [seed] and [startedAt] of the
-/// running game so a late arrival can reconstruct the identical planet field
-/// and countdown and join as a spectator.
-class PresenceMember {
-  PresenceMember({
-    required this.id,
-    required this.name,
-    required this.color,
-    required this.phase,
-    this.seed,
-    this.startedAt,
-  });
-
-  final String id;
-  final String name;
-  final int color;
-  final GamePhase phase;
-  final int? seed;
-  final int? startedAt;
-
-  bool get isPlaying => phase == GamePhase.playing;
-}
 
 /// Owns the single public Supabase Realtime channel for the game.
 ///

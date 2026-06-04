@@ -1,20 +1,5 @@
-import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-part 'high_score_service.freezed.dart';
-part 'high_score_service.g.dart';
-
-/// One leaderboard row: a player's display name and accumulated points.
-@freezed
-abstract class HighScore with _$HighScore {
-  const factory HighScore({
-    @JsonKey(name: 'player_name') @Default('Pilot') String playerName,
-    @Default(0) int points,
-  }) = _HighScore;
-
-  factory HighScore.fromJson(Map<String, dynamic> json) =>
-      _$HighScoreFromJson(json);
-}
+import 'package:supaspace/game/net/models/high_score.dart';
 
 /// Reads and updates the persistent high score in Postgres.
 ///

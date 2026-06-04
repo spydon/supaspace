@@ -52,6 +52,8 @@ class _GamePageState extends State<_GamePage> {
       body: GameWidget<SpaceGame>.controlled(
         gameFactory: () => SpaceGame()..gameFocusNode = _gameFocusNode,
         focusNode: _gameFocusNode,
+        // Shown while the game's onLoad preloads images, animations and audio.
+        loadingBuilder: (_) => const _Loading(),
         overlayBuilderMap: {
           SpaceGame.overlayName: (_, game) =>
               _StartsMusic(child: NameOverlay(game: game)),
@@ -64,6 +66,44 @@ class _GamePageState extends State<_GamePage> {
           SpaceGame.overlaySpectate: (_, game) =>
               _StartsMusic(child: SpectateOverlay(game: game)),
         },
+      ),
+    );
+  }
+}
+
+/// In-game loading screen shown while the game preloads its assets. Matches the
+/// HTML loader in `web/index.html` so the hand-off is seamless.
+class _Loading extends StatelessWidget {
+  const _Loading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFF05060F),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'SUPASPACE',
+              style: TextStyle(
+                color: Color(0xFF66E0FF),
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 6,
+              ),
+            ),
+            SizedBox(height: 24),
+            SizedBox(
+              width: 40,
+              height: 40,
+              child: CircularProgressIndicator(
+                strokeWidth: 4,
+                color: Color(0xFF66E0FF),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
