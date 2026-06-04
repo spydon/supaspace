@@ -296,6 +296,8 @@ class _Scoreboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final players = entries.where((entry) => !entry.spectating).toList();
+    final spectators = entries.where((entry) => entry.spectating).toList();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
@@ -307,56 +309,74 @@ class _Scoreboard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'PLANETS',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
-              fontSize: 11,
-              letterSpacing: 2,
+          _label('PLANETS'),
+          const SizedBox(height: 6),
+          ...players.map(_row),
+          if (spectators.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _label('SPECTATING'),
+            const SizedBox(height: 6),
+            ...spectators.map(_row),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _label(String text) => Text(
+    text,
+    style: TextStyle(
+      color: Colors.white.withValues(alpha: 0.5),
+      fontSize: 11,
+      letterSpacing: 2,
+    ),
+  );
+
+  Widget _row(ScoreEntry entry) {
+    final isYou = entry.id == youId;
+    final dim = entry.spectating ? 0.55 : 1.0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: entry.color.withValues(alpha: dim),
+              shape: BoxShape.circle,
             ),
           ),
-          const SizedBox(height: 6),
-          ...entries.map(
-            (entry) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: entry.color,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 130,
-                    child: Text(
-                      entry.name + (entry.id == youId ? ' (you)' : ''),
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        fontWeight: entry.id == youId
-                            ? FontWeight.w700
-                            : FontWeight.w400,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${entry.planets}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontFeatures: [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                ],
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 130,
+            child: Text(
+              entry.name + (isYou ? ' (you)' : ''),
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.9 * dim),
+                fontWeight: isYou ? FontWeight.w700 : FontWeight.w400,
               ),
             ),
           ),
+          const SizedBox(width: 8),
+          // Players show their planet count; spectators show a watching icon.
+          if (entry.spectating)
+            Icon(
+              Icons.visibility_outlined,
+              size: 15,
+              color: Colors.white.withValues(alpha: 0.55),
+            )
+          else
+            Text(
+              '${entry.planets}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
         ],
       ),
     );

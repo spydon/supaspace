@@ -4,7 +4,7 @@
 class Countdown {
   Countdown({required this.startedAt, this.duration = gameDuration});
 
-  static const gameDuration = Duration(minutes: 5);
+  static const gameDuration = Duration(minutes: 3);
 
   final int startedAt; // epoch ms
   final Duration duration;

@@ -34,12 +34,17 @@ class ScoreEntry {
     required this.name,
     required this.color,
     required this.planets,
+    this.spectating = false,
   });
 
   final String id;
   final String name;
   final Color color;
   final int planets;
+
+  /// Whether this member is watching rather than competing. Spectators are
+  /// listed separately from the ranked planet count.
+  final bool spectating;
 }
 
 /// The final result of a match: who controlled the most planets when the
@@ -125,7 +130,7 @@ class SpaceGame extends FlameGame
   // Reactive state consumed by the Flutter overlays.
   final phase = ValueNotifier<GamePhase>(GamePhase.lobby);
   final roster = ValueNotifier<List<PresenceMember>>([]);
-  final clock = ValueNotifier<String>('05:00');
+  final clock = ValueNotifier<String>('03:00');
   final scores = ValueNotifier<List<ScoreEntry>>([]);
   final outcome = ValueNotifier<MatchOutcome?>(null);
   final highScores = ValueNotifier<List<HighScore>>([]);
@@ -529,9 +534,11 @@ class SpaceGame extends FlameGame
     thrustHeld = false;
     brakeHeld = false;
     _recomputeScores();
-    final scoreEntries = scores.value;
-    final topPlanets = scoreEntries.isEmpty ? 0 : scoreEntries.first.planets;
-    final leaders = scoreEntries
+    final playerEntries = scores.value
+        .where((entry) => !entry.spectating)
+        .toList();
+    final topPlanets = playerEntries.isEmpty ? 0 : playerEntries.first.planets;
+    final leaders = playerEntries
         .where((entry) => entry.planets == topPlanets)
         .toList();
     final matchOutcome = MatchOutcome(leaders: leaders, topPlanets: topPlanets);
@@ -970,19 +977,35 @@ class SpaceGame extends FlameGame
         planetCounts[owner] = (planetCounts[owner] ?? 0) + 1;
       }
     }
-    final scoreEntries =
-        _members.values
-            .map(
-              (member) => ScoreEntry(
-                id: member.id,
-                name: member.name,
-                color: Color(member.color),
-                planets: planetCounts[member.id] ?? 0,
-              ),
-            )
-            .toList()
-          ..sort((first, second) => second.planets.compareTo(first.planets));
-    scores.value = scoreEntries;
+    // The planet ranking only includes active players. Spectators (anyone
+    // watching, including pilots who went idle) are listed separately, and
+    // lobby members who aren't in this match are left out entirely.
+    final players = <ScoreEntry>[];
+    final spectators = <ScoreEntry>[];
+    for (final member in _members.values) {
+      if (member.isPlaying) {
+        players.add(
+          ScoreEntry(
+            id: member.id,
+            name: member.name,
+            color: Color(member.color),
+            planets: planetCounts[member.id] ?? 0,
+          ),
+        );
+      } else if (member.isSpectating) {
+        spectators.add(
+          ScoreEntry(
+            id: member.id,
+            name: member.name,
+            color: Color(member.color),
+            planets: 0,
+            spectating: true,
+          ),
+        );
+      }
+    }
+    players.sort((first, second) => second.planets.compareTo(first.planets));
+    scores.value = [...players, ...spectators];
   }
 
   PlanetComponent? _planetById(int id) {

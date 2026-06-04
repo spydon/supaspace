@@ -22,4 +22,5 @@ abstract class PresenceMember with _$PresenceMember {
   const PresenceMember._();
 
   bool get isPlaying => phase == GamePhase.playing;
+  bool get isSpectating => phase == GamePhase.spectating;
 }
