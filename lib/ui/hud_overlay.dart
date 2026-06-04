@@ -1,10 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supaspace/game/game_phase.dart';
 import 'package:supaspace/game/space_game.dart';
 import 'package:supaspace/game/taunts.dart';
 
-/// In-game HUD: the shared countdown (top-center) and the live planet
-/// scoreboard (top-right).
+/// In-game HUD: the shared countdown, the live planet scoreboard (top-right),
+/// the powerup toast and taunts. On mobile the countdown sits under the
+/// scoreboard and on-screen thrust/brake controls are added bottom-left.
 class HudOverlay extends StatelessWidget {
   const HudOverlay({required this.game, super.key});
 
@@ -12,31 +14,47 @@ class HudOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+
+    final clock = ValueListenableBuilder<String>(
+      valueListenable: game.clock,
+      builder: (context, value, _) => _ClockChip(value),
+    );
+
     return Stack(
       children: [
-        Align(
-          alignment: Alignment.topCenter,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: ValueListenableBuilder<String>(
-              valueListenable: game.clock,
-              builder: (context, value, _) => _ClockChip(value),
-            ),
-          ),
-        ),
+        // Scoreboard top-right; on mobile the countdown sits underneath it.
         Align(
           alignment: Alignment.topRight,
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: ValueListenableBuilder<List<ScoreEntry>>(
-              valueListenable: game.scores,
-              builder: (context, entries, _) => _Scoreboard(
-                entries: entries,
-                youId: game.player.id,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ValueListenableBuilder<List<ScoreEntry>>(
+                  valueListenable: game.scores,
+                  builder: (context, entries, _) => _Scoreboard(
+                    entries: entries,
+                    youId: game.player.id,
+                  ),
+                ),
+                if (isMobile) ...[const SizedBox(height: 12), clock],
+              ],
             ),
           ),
         ),
+        // On desktop the countdown is centered at the top.
+        if (!isMobile)
+          Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: clock,
+            ),
+          ),
         Align(
           child: ValueListenableBuilder<String?>(
             valueListenable: game.powerupMessage,
@@ -53,7 +71,79 @@ class HudOverlay extends StatelessWidget {
                 : const SizedBox.shrink(),
           ),
         ),
+        // On-screen thrust/brake controls (mobile only), above the taunt row.
+        if (isMobile)
+          Align(
+            alignment: Alignment.bottomLeft,
+            child: ValueListenableBuilder<GamePhase>(
+              valueListenable: game.phase,
+              builder: (context, phase, _) => phase == GamePhase.playing
+                  ? _ThrustControls(game: game)
+                  : const SizedBox.shrink(),
+            ),
+          ),
       ],
+    );
+  }
+}
+
+/// On-screen thrust + brake buttons for touch devices. Lifted above the taunt
+/// row so the two don't collide on narrow screens.
+class _ThrustControls extends StatelessWidget {
+  const _ThrustControls({required this.game});
+
+  final SpaceGame game;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, bottom: 88),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ControlButton(
+            icon: Icons.keyboard_arrow_up,
+            onHold: (held) => game.thrustHeld = held,
+          ),
+          const SizedBox(width: 12),
+          _ControlButton(
+            icon: Icons.stop,
+            onHold: (held) => game.brakeHeld = held,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A hold-to-activate control button (press = on, release = off).
+class _ControlButton extends StatelessWidget {
+  const _ControlButton({required this.icon, required this.onHold});
+
+  final IconData icon;
+  final ValueChanged<bool> onHold;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (_) => onHold(true),
+      onPointerUp: (_) => onHold(false),
+      onPointerCancel: (_) => onHold(false),
+      child: Container(
+        width: 64,
+        height: 64,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: const Color(0xFF0A0C1A).withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        ),
+        child: Icon(
+          icon,
+          color: Colors.white.withValues(alpha: 0.85),
+          size: 30,
+        ),
+      ),
     );
   }
 }

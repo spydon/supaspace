@@ -24,6 +24,7 @@ _ShipState _$ShipStateFromJson(Map<String, dynamic> json) => _ShipState(
   velocityX: (json['velocityX'] as num).toDouble(),
   velocityY: (json['velocityY'] as num).toDouble(),
   alive: json['alive'] as bool? ?? true,
+  braking: json['braking'] as bool? ?? false,
 );
 
 Map<String, dynamic> _$ShipStateToJson(_ShipState instance) =>
@@ -37,6 +38,7 @@ Map<String, dynamic> _$ShipStateToJson(_ShipState instance) =>
       'velocityX': instance.velocityX,
       'velocityY': instance.velocityY,
       'alive': instance.alive,
+      'braking': instance.braking,
     };
 
 _ShotEvent _$ShotEventFromJson(Map<String, dynamic> json) => _ShotEvent(

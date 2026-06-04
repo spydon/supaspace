@@ -281,7 +281,7 @@ as int,
 /// @nodoc
 mixin _$ShipState {
 
- String get id; String get name; int get color; double get positionX; double get positionY; double get angle; double get velocityX; double get velocityY; bool get alive;
+ String get id; String get name; int get color; double get positionX; double get positionY; double get angle; double get velocityX; double get velocityY; bool get alive; bool get braking;
 /// Create a copy of ShipState
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -294,16 +294,16 @@ $ShipStateCopyWith<ShipState> get copyWith => _$ShipStateCopyWithImpl<ShipState>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ShipState&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.color, color) || other.color == color)&&(identical(other.positionX, positionX) || other.positionX == positionX)&&(identical(other.positionY, positionY) || other.positionY == positionY)&&(identical(other.angle, angle) || other.angle == angle)&&(identical(other.velocityX, velocityX) || other.velocityX == velocityX)&&(identical(other.velocityY, velocityY) || other.velocityY == velocityY)&&(identical(other.alive, alive) || other.alive == alive));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ShipState&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.color, color) || other.color == color)&&(identical(other.positionX, positionX) || other.positionX == positionX)&&(identical(other.positionY, positionY) || other.positionY == positionY)&&(identical(other.angle, angle) || other.angle == angle)&&(identical(other.velocityX, velocityX) || other.velocityX == velocityX)&&(identical(other.velocityY, velocityY) || other.velocityY == velocityY)&&(identical(other.alive, alive) || other.alive == alive)&&(identical(other.braking, braking) || other.braking == braking));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,color,positionX,positionY,angle,velocityX,velocityY,alive);
+int get hashCode => Object.hash(runtimeType,id,name,color,positionX,positionY,angle,velocityX,velocityY,alive,braking);
 
 @override
 String toString() {
-  return 'ShipState(id: $id, name: $name, color: $color, positionX: $positionX, positionY: $positionY, angle: $angle, velocityX: $velocityX, velocityY: $velocityY, alive: $alive)';
+  return 'ShipState(id: $id, name: $name, color: $color, positionX: $positionX, positionY: $positionY, angle: $angle, velocityX: $velocityX, velocityY: $velocityY, alive: $alive, braking: $braking)';
 }
 
 
@@ -314,7 +314,7 @@ abstract mixin class $ShipStateCopyWith<$Res>  {
   factory $ShipStateCopyWith(ShipState value, $Res Function(ShipState) _then) = _$ShipStateCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, int color, double positionX, double positionY, double angle, double velocityX, double velocityY, bool alive
+ String id, String name, int color, double positionX, double positionY, double angle, double velocityX, double velocityY, bool alive, bool braking
 });
 
 
@@ -331,7 +331,7 @@ class _$ShipStateCopyWithImpl<$Res>
 
 /// Create a copy of ShipState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? color = null,Object? positionX = null,Object? positionY = null,Object? angle = null,Object? velocityX = null,Object? velocityY = null,Object? alive = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? color = null,Object? positionX = null,Object? positionY = null,Object? angle = null,Object? velocityX = null,Object? velocityY = null,Object? alive = null,Object? braking = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -342,6 +342,7 @@ as double,angle: null == angle ? _self.angle : angle // ignore: cast_nullable_to
 as double,velocityX: null == velocityX ? _self.velocityX : velocityX // ignore: cast_nullable_to_non_nullable
 as double,velocityY: null == velocityY ? _self.velocityY : velocityY // ignore: cast_nullable_to_non_nullable
 as double,alive: null == alive ? _self.alive : alive // ignore: cast_nullable_to_non_nullable
+as bool,braking: null == braking ? _self.braking : braking // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
 }
@@ -427,10 +428,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  int color,  double positionX,  double positionY,  double angle,  double velocityX,  double velocityY,  bool alive)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  int color,  double positionX,  double positionY,  double angle,  double velocityX,  double velocityY,  bool alive,  bool braking)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ShipState() when $default != null:
-return $default(_that.id,_that.name,_that.color,_that.positionX,_that.positionY,_that.angle,_that.velocityX,_that.velocityY,_that.alive);case _:
+return $default(_that.id,_that.name,_that.color,_that.positionX,_that.positionY,_that.angle,_that.velocityX,_that.velocityY,_that.alive,_that.braking);case _:
   return orElse();
 
 }
@@ -448,10 +449,10 @@ return $default(_that.id,_that.name,_that.color,_that.positionX,_that.positionY,
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  int color,  double positionX,  double positionY,  double angle,  double velocityX,  double velocityY,  bool alive)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  int color,  double positionX,  double positionY,  double angle,  double velocityX,  double velocityY,  bool alive,  bool braking)  $default,) {final _that = this;
 switch (_that) {
 case _ShipState():
-return $default(_that.id,_that.name,_that.color,_that.positionX,_that.positionY,_that.angle,_that.velocityX,_that.velocityY,_that.alive);case _:
+return $default(_that.id,_that.name,_that.color,_that.positionX,_that.positionY,_that.angle,_that.velocityX,_that.velocityY,_that.alive,_that.braking);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -468,10 +469,10 @@ return $default(_that.id,_that.name,_that.color,_that.positionX,_that.positionY,
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  int color,  double positionX,  double positionY,  double angle,  double velocityX,  double velocityY,  bool alive)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  int color,  double positionX,  double positionY,  double angle,  double velocityX,  double velocityY,  bool alive,  bool braking)?  $default,) {final _that = this;
 switch (_that) {
 case _ShipState() when $default != null:
-return $default(_that.id,_that.name,_that.color,_that.positionX,_that.positionY,_that.angle,_that.velocityX,_that.velocityY,_that.alive);case _:
+return $default(_that.id,_that.name,_that.color,_that.positionX,_that.positionY,_that.angle,_that.velocityX,_that.velocityY,_that.alive,_that.braking);case _:
   return null;
 
 }
@@ -483,7 +484,7 @@ return $default(_that.id,_that.name,_that.color,_that.positionX,_that.positionY,
 @JsonSerializable()
 
 class _ShipState implements ShipState {
-  const _ShipState({required this.id, required this.name, required this.color, required this.positionX, required this.positionY, required this.angle, required this.velocityX, required this.velocityY, this.alive = true});
+  const _ShipState({required this.id, required this.name, required this.color, required this.positionX, required this.positionY, required this.angle, required this.velocityX, required this.velocityY, this.alive = true, this.braking = false});
   factory _ShipState.fromJson(Map<String, dynamic> json) => _$ShipStateFromJson(json);
 
 @override final  String id;
@@ -495,6 +496,7 @@ class _ShipState implements ShipState {
 @override final  double velocityX;
 @override final  double velocityY;
 @override@JsonKey() final  bool alive;
+@override@JsonKey() final  bool braking;
 
 /// Create a copy of ShipState
 /// with the given fields replaced by the non-null parameter values.
@@ -509,16 +511,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ShipState&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.color, color) || other.color == color)&&(identical(other.positionX, positionX) || other.positionX == positionX)&&(identical(other.positionY, positionY) || other.positionY == positionY)&&(identical(other.angle, angle) || other.angle == angle)&&(identical(other.velocityX, velocityX) || other.velocityX == velocityX)&&(identical(other.velocityY, velocityY) || other.velocityY == velocityY)&&(identical(other.alive, alive) || other.alive == alive));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ShipState&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.color, color) || other.color == color)&&(identical(other.positionX, positionX) || other.positionX == positionX)&&(identical(other.positionY, positionY) || other.positionY == positionY)&&(identical(other.angle, angle) || other.angle == angle)&&(identical(other.velocityX, velocityX) || other.velocityX == velocityX)&&(identical(other.velocityY, velocityY) || other.velocityY == velocityY)&&(identical(other.alive, alive) || other.alive == alive)&&(identical(other.braking, braking) || other.braking == braking));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,color,positionX,positionY,angle,velocityX,velocityY,alive);
+int get hashCode => Object.hash(runtimeType,id,name,color,positionX,positionY,angle,velocityX,velocityY,alive,braking);
 
 @override
 String toString() {
-  return 'ShipState(id: $id, name: $name, color: $color, positionX: $positionX, positionY: $positionY, angle: $angle, velocityX: $velocityX, velocityY: $velocityY, alive: $alive)';
+  return 'ShipState(id: $id, name: $name, color: $color, positionX: $positionX, positionY: $positionY, angle: $angle, velocityX: $velocityX, velocityY: $velocityY, alive: $alive, braking: $braking)';
 }
 
 
@@ -529,7 +531,7 @@ abstract mixin class _$ShipStateCopyWith<$Res> implements $ShipStateCopyWith<$Re
   factory _$ShipStateCopyWith(_ShipState value, $Res Function(_ShipState) _then) = __$ShipStateCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, int color, double positionX, double positionY, double angle, double velocityX, double velocityY, bool alive
+ String id, String name, int color, double positionX, double positionY, double angle, double velocityX, double velocityY, bool alive, bool braking
 });
 
 
@@ -546,7 +548,7 @@ class __$ShipStateCopyWithImpl<$Res>
 
 /// Create a copy of ShipState
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? color = null,Object? positionX = null,Object? positionY = null,Object? angle = null,Object? velocityX = null,Object? velocityY = null,Object? alive = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? color = null,Object? positionX = null,Object? positionY = null,Object? angle = null,Object? velocityX = null,Object? velocityY = null,Object? alive = null,Object? braking = null,}) {
   return _then(_ShipState(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -557,6 +559,7 @@ as double,angle: null == angle ? _self.angle : angle // ignore: cast_nullable_to
 as double,velocityX: null == velocityX ? _self.velocityX : velocityX // ignore: cast_nullable_to_non_nullable
 as double,velocityY: null == velocityY ? _self.velocityY : velocityY // ignore: cast_nullable_to_non_nullable
 as double,alive: null == alive ? _self.alive : alive // ignore: cast_nullable_to_non_nullable
+as bool,braking: null == braking ? _self.braking : braking // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
 }
