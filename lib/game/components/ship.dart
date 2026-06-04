@@ -209,6 +209,7 @@ class LocalShip extends ShipComponent
 
   @override
   bool onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
+    game.markActivity();
     _thrustPressed =
         keysPressed.contains(LogicalKeyboardKey.keyW) ||
         keysPressed.contains(LogicalKeyboardKey.arrowUp);
@@ -242,6 +243,11 @@ class LocalShip extends ShipComponent
     // Thrust / brake — keyboard or the on-screen (mobile) buttons.
     final thrust = _thrustPressed || game.thrustHeld;
     final brake = _brakePressed || game.brakeHeld;
+    // Held input (keys, on-screen buttons, or continuous fire) counts as
+    // activity so a busy pilot is never flagged idle.
+    if (thrust || brake || game.firing) {
+      game.markActivity();
+    }
     thrusting = thrust;
     if (thrust) {
       final acceleration = _thrustAcceleration * deltaTime;

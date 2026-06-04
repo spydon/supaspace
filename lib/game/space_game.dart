@@ -164,6 +164,12 @@ class SpaceGame extends FlameGame
 
   double _scoreTimer = 0;
 
+  /// Seconds the local pilot has gone without any input while playing. Reset by
+  /// [markActivity]; once it reaches [_idleTimeout] the pilot is dropped into
+  /// spectator mode so an AFK player stops occupying the match.
+  double _idleSeconds = 0;
+  static const _idleTimeout = 60.0;
+
   @override
   Future<void> onLoad() async {
     camera.viewfinder.anchor = Anchor.center;
@@ -393,6 +399,7 @@ class SpaceGame extends FlameGame
       return;
     }
     _activeSeed = seed;
+    _idleSeconds = 0;
     _resetWorld();
 
     if (_grid == null) {
@@ -557,6 +564,35 @@ class SpaceGame extends FlameGame
       ..remove(overlayHud)
       ..remove(overlaySpectate)
       ..add(overlayLobby);
+  }
+
+  /// Resets the idle timer. Called on any local input (aim, fire, thrust/brake,
+  /// keys, taunts) while a match is running.
+  void markActivity() => _idleSeconds = 0;
+
+  /// Drops the local ship and switches to the spectator camera after a spell of
+  /// inactivity (see [_idleTimeout]). Mirrors the spectator setup in
+  /// [_enterMatch], but as a live transition mid-match.
+  void _goIdleSpectator() {
+    _idleSeconds = 0;
+    final ship = _ships.remove(player.id) as LocalShip?;
+    if (ship != null) {
+      // Let peers know we've left the fight before we stop broadcasting, so our
+      // ship doesn't linger as a parked target on their side.
+      ship.alive = false;
+      broadcastShipState(ship);
+      ship.removeFromParent();
+    }
+    thrustHeld = false;
+    brakeHeld = false;
+    firing = false;
+    net.setSpectating();
+    phase.value = GamePhase.spectating;
+    overlays.add(overlaySpectate);
+    _followedId = null;
+    followedPlayer.value = null;
+    _ensureSpectatorFollow();
+    _showToast('Idle — now spectating');
   }
 
   void _resetWorld() {
@@ -803,6 +839,16 @@ class SpaceGame extends FlameGame
       return;
     }
 
+    // AFK guard: a pilot who gives no input for a while is moved to the
+    // spectator camera so they stop occupying the match.
+    if (playing) {
+      _idleSeconds += deltaTime;
+      if (_idleSeconds >= _idleTimeout) {
+        _goIdleSpectator();
+        return;
+      }
+    }
+
     // The countdown runs identically for players and spectators. Only reformat
     // the clock string when the whole-second value changes, so the per-frame
     // path allocates nothing.
@@ -864,6 +910,7 @@ class SpaceGame extends FlameGame
     if (_ships[player.id] == null) {
       return;
     }
+    markActivity();
     final phrase = Taunts.randomPhrase();
     _showTaunt(player.id, emoji, phrase);
     net.sendTaunt(TauntEvent(byId: player.id, emoji: emoji, taunt: phrase));
@@ -965,6 +1012,7 @@ class SpaceGame extends FlameGame
     // first interaction (idempotent / settings-gated).
     SoundService.instance.startMusic();
     firing = true;
+    markActivity();
   }
 
   @override
@@ -1004,6 +1052,7 @@ class SpaceGame extends FlameGame
   void aimAtScreen(double x, double y) {
     _lastPointerScreen.setValues(x, y);
     _hasPointer = true;
+    markActivity();
   }
 
   @override
