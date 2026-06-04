@@ -57,8 +57,8 @@ class HudOverlay extends StatelessWidget {
           ),
         Align(
           child: ValueListenableBuilder<String?>(
-            valueListenable: game.powerupMessage,
-            builder: (context, message, _) => _PowerupToast(message: message),
+            valueListenable: game.toastMessage,
+            builder: (context, message, _) => _Toast(message: message),
           ),
         ),
         // Taunt buttons, only while you have a ship to taunt from.
@@ -200,11 +200,11 @@ class _TauntButton extends StatelessWidget {
   }
 }
 
-/// Center-screen banner naming the powerup that was just picked up (e.g.
-/// "Bullet Speed +1"). It pops in (scale + fade) when the message appears and
-/// animates back out when it clears.
-class _PowerupToast extends StatelessWidget {
-  const _PowerupToast({required this.message});
+/// Center-screen banner for a transient notice (a powerup picked up, e.g.
+/// "Bullet Speed +1", or a planet taken). It pops in (scale + fade) when the
+/// message appears and animates back out when it clears.
+class _Toast extends StatelessWidget {
+  const _Toast({required this.message});
 
   final String? message;
 

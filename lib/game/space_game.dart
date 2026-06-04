@@ -130,11 +130,12 @@ class SpaceGame extends FlameGame
   final outcome = ValueNotifier<MatchOutcome?>(null);
   final highScores = ValueNotifier<List<HighScore>>([]);
 
-  /// Transient message shown when a powerup is picked up (e.g. "Bullet
-  /// Speed +1"); cleared after [_powerupMessageDuration].
-  final powerupMessage = ValueNotifier<String?>(null);
-  static const _powerupMessageDuration = 2.2;
-  double _powerupMessageTimer = 0;
+  /// Transient toast shown to the local player (e.g. "Bullet Speed +1" on a
+  /// powerup, "Planet taken from X" on a capture); cleared after
+  /// [_toastDuration]. Set via [_showToast].
+  final toastMessage = ValueNotifier<String?>(null);
+  static const _toastDuration = 2.2;
+  double _toastTimer = 0;
 
   /// In the lobby, whether this client intends to spectate the next match
   /// rather than play it.
@@ -790,11 +791,11 @@ class SpaceGame extends FlameGame
       camera.globalToLocal(_lastPointerScreen, output: aimWorld);
     }
 
-    // Fade out the powerup toast regardless of phase, so it doesn't linger.
-    if (_powerupMessageTimer > 0) {
-      _powerupMessageTimer -= deltaTime;
-      if (_powerupMessageTimer <= 0) {
-        powerupMessage.value = null;
+    // Clear the toast regardless of phase, so it doesn't linger.
+    if (_toastTimer > 0) {
+      _toastTimer -= deltaTime;
+      if (_toastTimer <= 0) {
+        toastMessage.value = null;
       }
     }
 
@@ -879,6 +880,7 @@ class SpaceGame extends FlameGame
     );
 
     if (_captureElapsed >= captureSeconds) {
+      final previousOwnerId = hoveredPlanet.ownerId;
       final capturedAt = DateTime.now().millisecondsSinceEpoch;
       hoveredPlanet
         ..ownerId = player.id
@@ -891,6 +893,7 @@ class SpaceGame extends FlameGame
           capturedAt: capturedAt,
         ),
       );
+      _showToast(_captureMessage(previousOwnerId));
       _captureElapsed = 0;
       _recomputeScores();
     }
@@ -943,7 +946,7 @@ class SpaceGame extends FlameGame
     if (_powerupCaptureElapsed >= captureSeconds) {
       hoveredPowerup.collect();
       ship.applyPowerup(hoveredPowerup.type);
-      _showPowerupMessage(hoveredPowerup.type.pickupMessage);
+      _showToast(hoveredPowerup.type.pickupMessage);
       SoundService.instance.playSoundEffect(SoundEffect.powerup);
       net.sendPowerupTaken(
         PowerupTakenEvent(powerupId: hoveredPowerup.id, byId: player.id),
@@ -963,9 +966,19 @@ class SpaceGame extends FlameGame
     }
   }
 
-  void _showPowerupMessage(String message) {
-    powerupMessage.value = message;
-    _powerupMessageTimer = _powerupMessageDuration;
+  /// Shows a short-lived center-screen toast to the local player.
+  void _showToast(String message) {
+    toastMessage.value = message;
+    _toastTimer = _toastDuration;
+  }
+
+  /// Toast text for taking a planet that was [previousOwnerId]'s (or nobody's).
+  String _captureMessage(String? previousOwnerId) {
+    if (previousOwnerId == null) {
+      return 'Planet taken';
+    }
+    final name = _members[previousOwnerId]?.name ?? 'someone';
+    return 'Planet taken from $name';
   }
 
   // --- taunts ---------------------------------------------------------------
@@ -1129,7 +1142,7 @@ class SpaceGame extends FlameGame
     scores.dispose();
     outcome.dispose();
     highScores.dispose();
-    powerupMessage.dispose();
+    toastMessage.dispose();
     spectateIntent.dispose();
     followedPlayer.dispose();
     super.onRemove();
