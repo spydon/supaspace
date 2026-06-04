@@ -175,6 +175,16 @@ class SpaceGame extends FlameGame
   double _idleSeconds = 0;
   static const _idleTimeout = 60.0;
 
+  /// When we last received a ship-state broadcast from each remote player
+  /// (epoch ms). A member still advertising `playing` that we haven't heard
+  /// from for longer than [_inactivePlayerTimeoutMs] is treated as inactive —
+  /// typically a backgrounded/closed tab whose frozen client never demoted
+  /// itself to spectator. The window is a bit longer than [_idleTimeout] so a
+  /// live-but-parked pilot has time to self-demote (flipping their presence to
+  /// spectating) before we'd ever flag them.
+  final Map<String, int> _lastStateMs = {};
+  static const _inactivePlayerTimeoutMs = 70000;
+
   @override
   Future<void> onLoad() async {
     camera.viewfinder.anchor = Anchor.center;
@@ -651,14 +661,21 @@ class SpaceGame extends FlameGame
     for (final bullet in world.children.query<Bullet>()) {
       bullet.removeFromParent();
     }
+    _lastStateMs.clear();
     camera.viewfinder.position = worldSize / 2;
   }
 
   // --- networking callbacks -------------------------------------------------
 
   void _onRoster(List<PresenceMember> members) {
+    final now = DateTime.now().millisecondsSinceEpoch;
     for (final member in members) {
       _members[member.id] = member;
+      // Give a newly-seen playing pilot the full grace window before their
+      // first broadcast arrives, so they aren't flagged inactive at the start.
+      if (member.isPlaying && member.id != player.id) {
+        _lastStateMs.putIfAbsent(member.id, () => now);
+      }
     }
     roster.value = members;
 
@@ -719,6 +736,7 @@ class SpaceGame extends FlameGame
         phase.value != GamePhase.spectating) {
       return;
     }
+    _lastStateMs[state.id] = DateTime.now().millisecondsSinceEpoch;
     var ship = _ships[state.id] as RemoteShip?;
     if (ship == null) {
       ship = RemoteShip(
@@ -1013,10 +1031,11 @@ class SpaceGame extends FlameGame
     // The planet ranking only includes active players. Spectators (anyone
     // watching, including pilots who went idle) are listed separately, and
     // lobby members who aren't in this match are left out entirely.
+    final now = DateTime.now().millisecondsSinceEpoch;
     final players = <ScoreEntry>[];
     final spectators = <ScoreEntry>[];
     for (final member in _members.values) {
-      if (member.isPlaying) {
+      if (member.isPlaying && _isActivePlayer(member.id, now)) {
         players.add(
           ScoreEntry(
             id: member.id,
@@ -1025,7 +1044,13 @@ class SpaceGame extends FlameGame
             planets: planetCounts[member.id] ?? 0,
           ),
         );
-      } else if (member.isSpectating) {
+      } else if (member.isPlaying || member.isSpectating) {
+        // Spectators, plus "playing" pilots we've stopped hearing from (a
+        // frozen background tab that never demoted itself). Drop the latter's
+        // parked ghost ship so it isn't a stray bullet-sink / homing target.
+        if (member.id != player.id) {
+          _ships.remove(member.id)?.removeFromParent();
+        }
         spectators.add(
           ScoreEntry(
             id: member.id,
@@ -1039,6 +1064,16 @@ class SpaceGame extends FlameGame
     }
     players.sort((first, second) => second.planets.compareTo(first.planets));
     scores.value = [...players, ...spectators];
+  }
+
+  /// Whether a `playing` member is genuinely active: ourselves always, or a
+  /// remote whose last broadcast is recent enough (see [_lastStateMs]).
+  bool _isActivePlayer(String id, int nowMs) {
+    if (id == player.id) {
+      return true;
+    }
+    final lastHeard = _lastStateMs[id];
+    return lastHeard != null && nowMs - lastHeard <= _inactivePlayerTimeoutMs;
   }
 
   PlanetComponent? _planetById(int id) {
